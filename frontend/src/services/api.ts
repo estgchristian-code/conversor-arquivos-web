@@ -17,25 +17,32 @@ class ApiClient {
 
     this.client.interceptors.response.use(
       (response) => response,
-      (error: AxiosError) => {
+      (error: AxiosError<{ message?: string }>) => {
         const message = error.response?.data?.message || error.message || 'Erro desconhecido'
-        return Promise.reject(new Error(message))
+        const wrapped = new Error(message) as Error & { status?: number }
+        wrapped.status = error.response?.status
+        return Promise.reject(wrapped)
       }
     )
   }
 
-  async uploadFiles(files: FileList): Promise<UploadResponse> {
+  async uploadFiles(files: File[], onProgress?: (percent: number) => void): Promise<UploadResponse> {
     const formData = new FormData()
-    Array.from(files).forEach((file) => {
+    files.forEach((file) => {
       formData.append('files', file)
     })
 
     const response = await this.client.post<ApiResponse<UploadResponse>>('/upload', formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: 0,
       onUploadProgress: (progressEvent) => {
-        // Progress handled by React Query
+        if (!onProgress) return
+        const total = progressEvent.total ?? files.reduce((acc, file) => acc + file.size, 0)
+        if (!total) return
+        onProgress(Math.min(100, Math.round((progressEvent.loaded / total) * 100)))
       },
     })
+
     return response.data.data
   }
 

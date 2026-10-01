@@ -10,6 +10,8 @@ export interface FileItem {
   error?: string
   outputFormat?: string
   outputUrl?: string
+  serverId?: string
+  uploadId?: string
   conversionId?: string
 }
 
@@ -61,6 +63,11 @@ export interface PaginatedResponse<T> {
   totalPages: number
 }
 
+export interface RejectedFile {
+  name: string
+  reason: string
+}
+
 export interface UploadResponse {
   uploadId: string
   files: Array<{
@@ -70,6 +77,7 @@ export interface UploadResponse {
     mimeType: string
     url: string
   }>
+  rejected: RejectedFile[]
 }
 
 export interface ConversionOptions {

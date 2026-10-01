@@ -11,7 +11,7 @@ interface SelectProps extends React.SelectHTMLAttributes<HTMLSelectElement> {
 export const Select = forwardRef<HTMLSelectElement, SelectProps>(
   ({ className, label, error, options, id, placeholder, ...props }, ref) => {
     return (
-      <div className="w-full">
+      <div>
         {label && (
           <label htmlFor={id} className="block text-sm font-medium text-gray-700 mb-1.5">
             {label}

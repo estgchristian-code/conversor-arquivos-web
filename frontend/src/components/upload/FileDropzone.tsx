@@ -1,13 +1,13 @@
 'use client'
 
-import { useCallback, useState, useRef } from 'react'
-import { useDropzone } from 'react-dropzone'
-import { Upload, X, FileText, Image, Music, Video, Archive, AlertCircle, CheckCircle } from 'lucide-react'
+import { useCallback, useState } from 'react'
+import { useDropzone, type FileRejection } from 'react-dropzone'
+import { Upload, X, FileText, Image, Music, Video, Archive, AlertCircle, RotateCcw } from 'lucide-react'
 import { cn, formatFileSize, getFileExtension } from '../../utils/helpers'
 import { Button } from '../ui/Button'
-import { Card, CardContent } from '../ui/Card'
 import { Progress } from '../ui/Progress'
 import { Badge } from '../ui/Badge'
+import { Select } from '../ui/Select'
 import type { FileItem } from '../../types'
 
 interface FileDropzoneProps {
@@ -58,10 +58,9 @@ export function FileDropzone({
   disabled = false,
 }: FileDropzoneProps) {
   const [rejectedFiles, setRejectedFiles] = useState<{ file: File; reason: string }[]>([])
-  const fileInputRef = useRef<HTMLInputElement>(null)
 
   const onDrop = useCallback(
-    (accepted: File[], rejected: { file: File; errors: Array<{ code: string; message: string }> }[]) => {
+    (accepted: File[], rejected: FileRejection[]) => {
       if (accepted.length > 0) {
         const fileItems: FileItem[] = accepted.map((file) => ({
           id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
@@ -76,16 +75,14 @@ export function FileDropzone({
         onFilesAdd(fileItems)
       }
 
-      if (rejected.length > 0) {
-        setRejectedFiles(
-          rejected.map(({ file, errors }) => ({
-            file,
-            reason: errors.map((e) => e.message).join(', '),
-          }))
-        )
-      }
+      setRejectedFiles(
+        rejected.map(({ file, errors }) => ({
+          file,
+          reason: errors.map((e) => e.message).join(', '),
+        })),
+      )
     },
-    [onFilesAdd]
+    [onFilesAdd],
   )
 
   const { getRootProps, getInputProps, isDragActive, isDragReject } = useDropzone({
@@ -97,17 +94,6 @@ export function FileDropzone({
     noClick: false,
     noKeyboard: false,
   })
-
-  const handleClick = () => {
-    fileInputRef.current?.click()
-  }
-
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' || e.key === ' ') {
-      e.preventDefault()
-      handleClick()
-    }
-  }
 
   return (
     <div className="space-y-4">
@@ -121,15 +107,10 @@ export function FileDropzone({
             : isDragReject
             ? 'border-red-500 bg-red-50'
             : 'border-gray-300 hover:border-primary-400 hover:bg-gray-50',
-          disabled && 'opacity-50 cursor-not-allowed'
+          disabled && 'opacity-50 cursor-not-allowed',
         )}
-        onClick={handleClick}
-        onKeyDown={handleKeyDown}
-        tabIndex={0}
-        role="button"
-        aria-label="Área de upload de arquivos"
       >
-        <input {...getInputProps()} ref={fileInputRef} />
+        <input {...getInputProps()} />
         <Upload className="mx-auto h-12 w-12 text-gray-400" />
         <p className="mt-3 text-lg font-medium text-gray-900">
           {isDragActive ? 'Solte os arquivos aqui' : 'Arraste e solte arquivos ou clique para selecionar'}
@@ -180,78 +161,76 @@ export function FileList({ files, onRemove, onRetry, onFormatChange, availableFo
   if (files.length === 0) return null
 
   return (
-    <Card>
-      <CardContent className="p-0">
-        <div className="divide-y divide-gray-200">
-          {files.map((fileItem) => (
-            <div key={fileItem.id} className="flex items-center gap-4 p-4 hover:bg-gray-50">
-              <FileIcon extension={fileItem.extension} />
-              
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2">
-                  <p className="truncate font-medium text-gray-900">{fileItem.name}</p>
-                  <Badge
-                    variant={
-                      fileItem.status === 'completed'
-                        ? 'success'
-                        : fileItem.status === 'error'
-                        ? 'error'
-                        : fileItem.status === 'converting' || fileItem.status === 'uploading'
-                        ? 'info'
-                        : 'secondary'
-                    }
-                  >
-                    {fileItem.status}
-                  </Badge>
-                </div>
-                <div className="flex items-center gap-3 mt-1">
-                  <span className="text-sm text-gray-500">{formatFileSize(fileItem.size)}</span>
-                  {(fileItem.status === 'uploading' || fileItem.status === 'converting') && (
-                    <Progress value={fileItem.progress} size="sm" className="w-32" />
-                  )}
-                  {fileItem.error && (
-                    <span className="text-sm text-red-600">{fileItem.error}</span>
-                  )}
-                </div>
-              </div>
+    <div className="divide-y divide-gray-200 overflow-hidden">
+      {files.map((fileItem) => (
+        <div key={fileItem.id} className="flex flex-wrap items-center gap-4 p-4 hover:bg-gray-50">
+          <FileIcon extension={fileItem.extension} />
 
-              {availableFormats && fileItem.status !== 'converting' && fileItem.status !== 'completed' && (
-                <Select
-                  value={fileItem.outputFormat || ''}
-                  onChange={(e) => onFormatChange?.(fileItem.id, e.target.value)}
-                  options={availableFormats[fileItem.extension]?.map((f) => ({ value: f, label: f })) || []}
-                  placeholder="Formato de saída"
-                  disabled={uploading}
-                  className="w-40"
-                />
-              )}
-
-              <div className="flex items-center gap-2">
-                {fileItem.status === 'error' && onRetry && (
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => onRetry(fileItem.id)}
-                    disabled={uploading}
-                    aria-label="Tentar novamente"
-                  >
-                    <CheckCircle className="h-4 w-4 text-green-600" />
-                  </Button>
-                )}
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={() => onRemove(fileItem.id)}
-                  disabled={uploading || fileItem.status === 'converting'}
-                  aria-label="Remover arquivo"
-                >
-                  <X className="h-4 w-4 text-gray-400 hover:text-red-600" />
-                </Button>
-              </div>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2">
+              <p className="truncate font-medium text-gray-900">{fileItem.name}</p>
+              <Badge
+                variant={
+                  fileItem.status === 'completed' || fileItem.status === 'uploaded'
+                    ? 'success'
+                    : fileItem.status === 'error'
+                    ? 'error'
+                    : fileItem.status === 'converting' || fileItem.status === 'uploading'
+                    ? 'info'
+                    : 'secondary'
+                }
+              >
+                {fileItem.status}
+              </Badge>
             </div>
-          ))}
+            <div className="flex flex-wrap items-center gap-3 mt-1">
+              <span className="text-sm text-gray-500">{formatFileSize(fileItem.size)}</span>
+              {(fileItem.status === 'uploading' || fileItem.status === 'converting') && (
+                <Progress value={fileItem.progress} size="sm" className="w-32" />
+              )}
+              {fileItem.error && (
+                <span className="text-sm text-red-600 break-words min-w-0">{fileItem.error}</span>
+              )}
+            </div>
+          </div>
+
+          {availableFormats && fileItem.status !== 'converting' && fileItem.status !== 'completed' && (
+            <Select
+              value={fileItem.outputFormat || ''}
+              onChange={(e) => onFormatChange?.(fileItem.id, e.target.value)}
+              options={availableFormats[fileItem.extension]?.map((f) => ({ value: f, label: f })) || []}
+              placeholder="Formato de saída"
+              disabled={uploading}
+              className="w-40 shrink-0"
+            />
+          )}
+
+          <div className="flex items-center gap-2 shrink-0">
+            {fileItem.status === 'error' && onRetry && (
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => onRetry(fileItem.id)}
+                disabled={uploading}
+                aria-label="Tentar novamente"
+                title="Tentar novamente"
+              >
+                <RotateCcw className="h-4 w-4 text-green-600" />
+              </Button>
+            )}
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => onRemove(fileItem.id)}
+              disabled={uploading || fileItem.status === 'converting'}
+              aria-label="Remover arquivo"
+              title="Remover arquivo"
+            >
+              <X className="h-4 w-4 text-gray-400 hover:text-red-600" />
+            </Button>
+          </div>
         </div>
-      </CardContent>
-    </Card>
+      ))}
+    </div>
   )
 }

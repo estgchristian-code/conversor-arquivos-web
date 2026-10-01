@@ -1,17 +1,16 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '../services/api'
-import type { FileItem, ConversionJob, StartConversionRequest, PaginatedResponse } from '../types'
+import type { FileItem, StartConversionRequest } from '../types'
 import { generateId, getFileExtension, getMimeTypeFromExtension } from '../utils/helpers'
 
-export function useUpload() {
-  const queryClient = useQueryClient()
+export interface UploadVariables {
+  files: File[]
+  onProgress?: (percent: number) => void
+}
 
+export function useUpload() {
   return useMutation({
-    mutationFn: (files: FileList) => api.uploadFiles(files),
-    onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ['conversions'] })
-      return data
-    },
+    mutationFn: ({ files, onProgress }: UploadVariables) => api.uploadFiles(files, onProgress),
   })
 }
 

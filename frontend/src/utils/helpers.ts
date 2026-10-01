@@ -24,6 +24,10 @@ export function getFileExtension(filename: string): string {
   return filename.slice(((filename.lastIndexOf('.') - 1) >>> 0) + 2).toLowerCase()
 }
 
+export function sanitizeFileName(name: string): string {
+  return name.split(/[\\/]/).pop()?.replace(/[^a-zA-Z0-9._-]/g, '_') || 'arquivo'
+}
+
 export function getMimeTypeFromExtension(ext: string): string {
   const mimeTypes: Record<string, string> = {
     pdf: 'application/pdf',

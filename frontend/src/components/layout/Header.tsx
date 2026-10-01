@@ -1,5 +1,4 @@
 import { FileText, Settings, History } from 'lucide-react'
-import { cn } from '../../utils/helpers'
 import { Container } from './Container'
 import { Button } from '../ui/Button'
 
@@ -21,7 +20,7 @@ export function Header({ currentPage = 'upload', onNavigate }: HeaderProps) {
         <div className="flex h-16 items-center justify-between">
           <div className="flex items-center gap-8">
             <h1 className="text-xl font-bold text-gray-900">Conversor de Arquivos</h1>
-            <nav className="hidden md:flex items-center gap-1">
+            <nav className="flex items-center gap-1">
               {navItems.map((item) => {
                 const Icon = item.icon
                 const isActive = currentPage === item.id
@@ -31,19 +30,21 @@ export function Header({ currentPage = 'upload', onNavigate }: HeaderProps) {
                     variant={isActive ? 'primary' : 'ghost'}
                     size="sm"
                     onClick={() => onNavigate?.(item.id as typeof currentPage)}
-                    className={cn('gap-2', isActive && 'text-primary-600')}
+                    aria-label={item.label}
+                    aria-current={isActive ? 'page' : undefined}
+                    className="gap-2 px-2 sm:px-3"
                   >
-                    <Icon className="h-4 w-4" />
-                    {item.label}
+                    <Icon className="h-4 w-4 shrink-0" />
+                    <span className="hidden sm:inline">{item.label}</span>
                   </Button>
                 )
               })}
             </nav>
           </div>
           <div className="flex items-center gap-4">
-            <Button variant="ghost" size="icon" aria-label="Tema">
-              <span className="h-5 w-5 rounded-lg bg-gray-100" />
-            </Button>
+            <span className="hidden text-xs text-gray-400 md:inline">
+              v0.0.1
+            </span>
           </div>
         </div>
       </Container>

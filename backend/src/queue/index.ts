@@ -1,6 +1,6 @@
 import { Queue, Worker, QueueEvents } from 'bullmq'
-import { config } from '../config'
-import { logger, createChildLogger } from '../utils/logger'
+import { config } from '../config/index.js'
+import { logger, createChildLogger } from '../utils/logger.js'
 
 const queueLogger = createChildLogger({ module: 'queue' })
 

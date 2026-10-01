@@ -1,13 +1,14 @@
-import { useState } from 'react'
-import { Plus, Minus, ArrowUp, ArrowDown, Trash2, Play, Loader2 } from 'lucide-react'
-import { cn, formatFileSize } from '../../utils/helpers'
+import { useEffect, useRef, useState } from 'react'
+import { Trash2, Play, CheckCircle, AlertCircle } from 'lucide-react'
+import { cn, formatFileSize, sanitizeFileName } from '../../utils/helpers'
+import { useUpload } from '../../hooks/useConversions'
 import { Button } from '../ui/Button'
-import { Card, CardHeader, CardTitle, CardContent, CardFooter } from '../ui/Card'
+import { Card, CardHeader, CardTitle, CardContent } from '../ui/Card'
 import { Badge } from '../ui/Badge'
 import { Select } from '../ui/Select'
 import { Progress } from '../ui/Progress'
 import { FileDropzone, FileList } from './FileDropzone'
-import type { FileItem } from '../../types'
+import type { FileItem, RejectedFile } from '../../types'
 
 const SUPPORTED_FORMATS: Record<string, string[]> = {
   pdf: ['docx', 'txt', 'html', 'png', 'jpg'],
@@ -53,17 +54,161 @@ const SUPPORTED_FORMATS: Record<string, string[]> = {
   '7z': ['zip', 'tar'],
 }
 
-export function BatchManager({ onStartConversion }: { onStartConversion: (files: FileItem[], outputFormat: string) => void }) {
+const MAX_FILES = 50
+
+export function BatchManager({ onStartConversion }: { onStartConversion?: (files: FileItem[], outputFormat: string) => void }) {
   const [files, setFiles] = useState<FileItem[]>([])
   const [globalFormat, setGlobalFormat] = useState<string>('')
-  const [isConverting, setIsConverting] = useState(false)
+  const [isUploading, setIsUploading] = useState(false)
+  const [uploadProgress, setUploadProgress] = useState(0)
+  const [notice, setNotice] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
+  const uploadMutation = useUpload()
+  const filesRef = useRef<FileItem[]>([])
+  const chainRef = useRef<Promise<void>>(Promise.resolve())
+  const pendingRef = useRef(0)
+  const enqueuedRef = useRef<Set<string>>(new Set())
+
+  useEffect(() => {
+    filesRef.current = files
+  }, [files])
+
+  const applyServerResult = (batch: FileItem[], result: { uploadId: string; files: Array<{ id: string; originalName: string; size: number; url: string }>; rejected: RejectedFile[] }) => {
+    const byName = new Map(result.files.map((file) => [sanitizeFileName(file.originalName), file]))
+    const rejectedByName = new Map(result.rejected.map((entry) => [sanitizeFileName(entry.name), entry]))
+
+    setFiles((prev) =>
+      prev.map((item) => {
+        if (!batch.some((entry) => entry.id === item.id)) return item
+
+        const uploaded = byName.get(sanitizeFileName(item.name))
+        if (uploaded) {
+          return {
+            ...item,
+            status: 'uploaded',
+            progress: 100,
+            error: undefined,
+            serverId: uploaded.id,
+            uploadId: result.uploadId,
+            outputUrl: uploaded.url,
+            size: uploaded.size || item.size,
+          }
+        }
+
+        const rejection = rejectedByName.get(sanitizeFileName(item.name))
+        return {
+          ...item,
+          status: 'error',
+          error: rejection?.reason ?? 'Arquivo rejeitado pelo servidor',
+        }
+      }),
+    )
+  }
+
+  const runUpload = async (targets: FileItem[], ids: Set<string>) => {
+    setUploadProgress(0)
+    setFiles((prev) =>
+      prev.map((item) =>
+        ids.has(item.id) ? { ...item, status: 'uploading', progress: 0, error: undefined } : item,
+      ),
+    )
+
+    try {
+      const result = await uploadMutation.mutateAsync({
+        files: targets.map((item) => item.file),
+        onProgress: (percent) => {
+          setUploadProgress(percent)
+          setFiles((prev) =>
+            prev.map((item) =>
+              ids.has(item.id) ? { ...item, progress: percent } : item,
+            ),
+          )
+        },
+      })
+
+      applyServerResult(targets, result)
+      setUploadProgress(100)
+
+      if (result.rejected.length > 0) {
+        setNotice({
+          type: 'error',
+          text: `${result.files.length} enviado(s). Rejeitados: ${result.rejected
+            .map((entry) => `${entry.name} (${entry.reason})`)
+            .join('; ')}`,
+        })
+      } else {
+        setNotice({ type: 'success', text: `${result.files.length} arquivo(s) enviado(s) com sucesso.` })
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Falha no envio dos arquivos'
+      setFiles((prev) =>
+        prev.map((item) => (ids.has(item.id) ? { ...item, status: 'error', progress: 0, error: message } : item)),
+      )
+      setNotice({ type: 'error', text: message })
+    }
+  }
+
+  const enqueueUpload = (batch: FileItem[]) => {
+    const targets = batch.filter(
+      (item) => item.file && item.status !== 'uploaded' && !enqueuedRef.current.has(item.id),
+    )
+    if (targets.length === 0) return
+
+    const ids = new Set(targets.map((item) => item.id))
+    targets.forEach((item) => enqueuedRef.current.add(item.id))
+
+    pendingRef.current += 1
+    setIsUploading(true)
+    setNotice(null)
+
+    chainRef.current = chainRef.current
+      .then(() => runUpload(targets, ids))
+      .catch(() => undefined)
+      .then(() => {
+        targets.forEach((item) => enqueuedRef.current.delete(item.id))
+        pendingRef.current -= 1
+        if (pendingRef.current === 0) setIsUploading(false)
+      })
+  }
 
   const handleFilesAdd = (newFiles: FileItem[]) => {
-    setFiles((prev) => [...prev, ...newFiles])
+    const previous = filesRef.current
+    const remaining = Math.max(0, MAX_FILES - previous.length)
+
+    if (remaining === 0) {
+      setNotice({
+        type: 'error',
+        text: `Limite de ${MAX_FILES} arquivos atingido. Remova algum arquivo antes de adicionar outros.`,
+      })
+      return
+    }
+
+    const accepted = newFiles.slice(0, remaining)
+    setFiles((prev) => [...prev, ...accepted])
+
+    if (newFiles.length > accepted.length) {
+      setNotice({
+        type: 'error',
+        text: `Apenas ${accepted.length} arquivo(s) adicionado(s): o limite é ${MAX_FILES} por sessão.`,
+      })
+    }
+
+    enqueueUpload([...previous, ...accepted])
+  }
+
+  const handleRetry = (id: string) => {
+    const target = filesRef.current.find((item) => item.id === id)
+    if (target) enqueueUpload([target])
   }
 
   const handleRemove = (id: string) => {
     setFiles((prev) => prev.filter((f) => f.id !== id))
+  }
+
+  const handleClearAll = () => {
+    setFiles([])
+    setGlobalFormat('')
+    setUploadProgress(0)
+    setNotice(null)
   }
 
   const handleFormatChange = (id: string, format: string) => {
@@ -76,14 +221,16 @@ export function BatchManager({ onStartConversion }: { onStartConversion: (files:
   }
 
   const handleStart = () => {
+    if (!onStartConversion) return
     const validFiles = files.filter((f) => f.outputFormat && f.status !== 'error')
     if (validFiles.length === 0) return
-    setIsConverting(true)
     onStartConversion(validFiles, globalFormat)
   }
 
   const canConvert = files.some((f) => f.outputFormat && f.status !== 'error' && f.status !== 'converting')
 
+  const uploadedCount = files.filter((f) => f.status === 'uploaded').length
+  const errorCount = files.filter((f) => f.status === 'error').length
   const totalSize = files.reduce((acc, f) => acc + f.size, 0)
 
   return (
@@ -95,7 +242,8 @@ export function BatchManager({ onStartConversion }: { onStartConversion: (files:
         <CardContent>
           <FileDropzone
             onFilesAdd={handleFilesAdd}
-            disabled={isConverting}
+            disabled={isUploading || files.length >= MAX_FILES}
+            maxFiles={Math.max(1, MAX_FILES - files.length)}
             acceptedFiles={Object.fromEntries(
               Object.entries(SUPPORTED_FORMATS).map(([ext, formats]) => [`.${ext}`, formats])
             )}
@@ -104,9 +252,10 @@ export function BatchManager({ onStartConversion }: { onStartConversion: (files:
           <FileList
             files={files}
             onRemove={handleRemove}
+            onRetry={handleRetry}
             onFormatChange={handleFormatChange}
             availableFormats={SUPPORTED_FORMATS}
-            uploading={isConverting}
+            uploading={isUploading}
           />
 
           {files.length > 0 && (
@@ -115,6 +264,8 @@ export function BatchManager({ onStartConversion }: { onStartConversion: (files:
                 <div className="flex items-center gap-4 text-sm text-gray-500">
                   <span>{files.length} arquivo(s)</span>
                   <span>{formatFileSize(totalSize)}</span>
+                  <Badge variant="success">{uploadedCount} enviado(s)</Badge>
+                  {errorCount > 0 && <Badge variant="error">{errorCount} com erro</Badge>}
                 </div>
                 <div className="flex items-center gap-2">
                   <Select
@@ -122,35 +273,63 @@ export function BatchManager({ onStartConversion }: { onStartConversion: (files:
                     onChange={(e) => handleGlobalFormatChange(e.target.value)}
                     options={getCommonFormats(files)}
                     placeholder="Aplicar a todos..."
-                    disabled={isConverting}
+                    disabled={isUploading}
                     className="w-48"
                   />
                 </div>
               </div>
 
+              {isUploading && (
+                <div className="flex items-center gap-3">
+                  <Progress value={uploadProgress} className="flex-1" />
+                  <span className="text-sm text-gray-500 w-12 text-right">{uploadProgress}%</span>
+                </div>
+              )}
+
+              {notice && (
+                <div
+                  className={cn(
+                    'flex items-start gap-2 rounded-lg border p-3 text-sm',
+                    notice.type === 'success'
+                      ? 'border-green-200 bg-green-50 text-green-700'
+                      : 'border-red-200 bg-red-50 text-red-700',
+                  )}
+                >
+                  {notice.type === 'success' ? (
+                    <CheckCircle className="h-4 w-4 mt-0.5 shrink-0" />
+                  ) : (
+                    <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
+                  )}
+                  <span>{notice.text}</span>
+                </div>
+              )}
+
               <div className="flex items-center justify-end gap-3 pt-4 border-t border-gray-200">
-                <Button variant="outline" onClick={() => setFiles([])} disabled={isConverting || files.length === 0}>
+                <Button variant="outline" onClick={handleClearAll} disabled={isUploading || files.length === 0}>
                   <Trash2 className="h-4 w-4 mr-2" />
                   Limpar tudo
                 </Button>
                 <Button
                   onClick={handleStart}
-                  disabled={isConverting || !canConvert}
-                  className="group"
+                  disabled={isUploading || !canConvert || !onStartConversion}
+                  title={!onStartConversion ? 'Conversão ainda não disponível' : undefined}
                 >
-                  {isConverting ? (
-                    <>
-                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                      Convertendo...
-                    </>
-                  ) : (
-                    <>
-                      <Play className="h-4 w-4 mr-2" />
-                      Iniciar Conversão
-                    </>
-                  )}
+                  <Play className="h-4 w-4 mr-2" />
+                  Iniciar Conversão
                 </Button>
               </div>
+
+              {!onStartConversion && (
+                <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+                  <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
+                  <span>
+                    A conversão ainda não está disponível: a rota de conversão do servidor responde
+                    <span className="font-medium"> 501 Not Implemented</span>. Os arquivos acima já
+                    foram enviados e ficam listados; o botão será habilitado quando o processamento
+                    existir no backend.
+                  </span>
+                </div>
+              )}
             </div>
           )}
         </CardContent>
