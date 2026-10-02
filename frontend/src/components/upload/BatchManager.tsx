@@ -1,68 +1,91 @@
 import { useEffect, useRef, useState } from 'react'
-import { Trash2, Play, CheckCircle, AlertCircle } from 'lucide-react'
+import { Trash2, Play, CheckCircle, AlertCircle, Download, Loader2 } from 'lucide-react'
 import { cn, formatFileSize, sanitizeFileName } from '../../utils/helpers'
-import { useUpload } from '../../hooks/useConversions'
+import { useConversion, useDownloadFile, useStartConversion, useUpload } from '../../hooks/useConversions'
 import { Button } from '../ui/Button'
-import { Card, CardHeader, CardTitle, CardContent } from '../ui/Card'
-import { Badge } from '../ui/Badge'
+import { Card, CardContent } from '../ui/Card'
 import { Select } from '../ui/Select'
 import { Progress } from '../ui/Progress'
 import { FileDropzone, FileList } from './FileDropzone'
-import type { FileItem, RejectedFile } from '../../types'
+import type { ConversionJob, ConversionResult, FileItem, RejectedFile } from '../../types'
 
-const SUPPORTED_FORMATS: Record<string, string[]> = {
-  pdf: ['docx', 'txt', 'html', 'png', 'jpg'],
-  docx: ['pdf', 'txt', 'html', 'odt'],
-  doc: ['pdf', 'docx', 'txt', 'html', 'odt'],
-  xlsx: ['pdf', 'csv', 'html', 'ods'],
-  xls: ['pdf', 'xlsx', 'csv', 'html', 'ods'],
-  pptx: ['pdf', 'html', 'odp'],
-  ppt: ['pdf', 'pptx', 'html', 'odp'],
-  txt: ['pdf', 'docx', 'md', 'html'],
-  md: ['pdf', 'html', 'docx', 'txt'],
-  rtf: ['pdf', 'docx', 'txt', 'html'],
-  odt: ['pdf', 'docx', 'txt', 'html'],
-  ods: ['pdf', 'xlsx', 'csv', 'html'],
-  odp: ['pdf', 'pptx', 'html'],
-  jpg: ['png', 'webp', 'avif', 'pdf'],
-  jpeg: ['png', 'webp', 'avif', 'pdf'],
-  png: ['jpg', 'webp', 'avif', 'pdf'],
-  webp: ['jpg', 'png', 'avif', 'pdf'],
-  avif: ['jpg', 'png', 'webp', 'pdf'],
-  gif: ['png', 'webp', 'jpg'],
-  svg: ['png', 'jpg', 'webp', 'pdf'],
-  tiff: ['jpg', 'png', 'webp', 'pdf'],
-  bmp: ['jpg', 'png', 'webp'],
-  heic: ['jpg', 'png', 'webp'],
-  mp3: ['wav', 'ogg', 'flac', 'aac'],
-  wav: ['mp3', 'ogg', 'flac', 'aac'],
-  flac: ['mp3', 'wav', 'ogg', 'aac'],
-  ogg: ['mp3', 'wav', 'flac', 'aac'],
-  aac: ['mp3', 'wav', 'ogg', 'flac'],
-  m4a: ['mp3', 'wav', 'ogg', 'flac'],
-  opus: ['mp3', 'wav', 'ogg', 'flac'],
-  mp4: ['webm', 'mov', 'gif'],
-  webm: ['mp4', 'mov', 'gif'],
-  mov: ['mp4', 'webm', 'gif'],
-  avi: ['mp4', 'webm', 'mov'],
-  mkv: ['mp4', 'webm', 'mov'],
-  flv: ['mp4', 'webm', 'mov'],
-  zip: ['tar', 'gz'],
-  tar: ['zip', 'gz'],
-  gz: ['zip', 'tar'],
-  rar: ['zip', 'tar'],
-  '7z': ['zip', 'tar'],
+/** Formatos de entrada com conversor implementado no backend. */
+const INPUT_FORMATS = ['jpg', 'jpeg', 'png', 'webp', 'avif', 'gif', 'tiff', 'bmp']
+
+/** Formatos de saida com conversor implementado no backend. */
+const OUTPUT_FORMATS = ['png', 'jpg', 'webp', 'avif', 'gif']
+
+/** Tipo usado pelo seletor de upload para validar a extensao escolhida. */
+const INPUT_MIME_TYPES: Record<string, string> = {
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  png: 'image/png',
+  webp: 'image/webp',
+  avif: 'image/avif',
+  gif: 'image/gif',
+  tiff: 'image/tiff',
+  bmp: 'image/bmp',
+}
+
+const toLabel = (format: string) => format.toUpperCase()
+
+/** O backend rejeita converter um arquivo para o proprio formato. */
+function isRedundantConversion(input: string, output: string): boolean {
+  return output === input || (input === 'jpeg' && output === 'jpg')
+}
+
+function getOutputOptions(inputFormat: string): Array<{ value: string; label: string }> {
+  if (!inputFormat) return []
+  return OUTPUT_FORMATS.filter((output) => !isRedundantConversion(inputFormat, output)).map((format) => ({
+    value: format,
+    label: toLabel(format),
+  }))
+}
+
+function isSupportedInput(extension: string): boolean {
+  return INPUT_FORMATS.includes(extension.toLowerCase())
+}
+
+/** JPG e JPEG sao o mesmo formato: o seletor aceita as duas extensoes. */
+function getAcceptedExtensions(inputFormat: string): string[] {
+  if (inputFormat === 'jpg' || inputFormat === 'jpeg') return ['jpg', 'jpeg']
+  return inputFormat ? [inputFormat] : []
+}
+
+function isAcceptedExtension(inputFormat: string, extension: string): boolean {
+  return getAcceptedExtensions(inputFormat).includes(extension.toLowerCase())
+}
+
+/**
+ * O react-dropzone achata os valores do mapa e compara por tipo MIME, entao a
+ * extensao tambem e informada para o filtro funcionar pelos dois criterios.
+ */
+function buildAccept(inputFormat: string): Record<string, string[]> | undefined {
+  const extensions = getAcceptedExtensions(inputFormat)
+  if (extensions.length === 0) return undefined
+
+  return Object.fromEntries(
+    extensions.map((extension) => [
+      `.${extension}`,
+      [INPUT_MIME_TYPES[extension] ?? extension, `.${extension}`],
+    ]),
+  )
 }
 
 const MAX_FILES = 50
 
 export function BatchManager({ onStartConversion }: { onStartConversion?: (files: FileItem[], outputFormat: string) => void }) {
   const [files, setFiles] = useState<FileItem[]>([])
-  const [globalFormat, setGlobalFormat] = useState<string>('')
+  const [inputFormat, setInputFormat] = useState<string>('')
+  const [outputFormat, setOutputFormat] = useState<string>('')
   const [isUploading, setIsUploading] = useState(false)
   const [uploadProgress, setUploadProgress] = useState(0)
   const [notice, setNotice] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
+  const [conversionId, setConversionId] = useState<string | null>(null)
+  const [conversionJob, setConversionJob] = useState<ConversionJob | null>(null)
   const uploadMutation = useUpload()
+  const startMutation = useStartConversion()
+  const downloadMutation = useDownloadFile()
   const filesRef = useRef<FileItem[]>([])
   const chainRef = useRef<Promise<void>>(Promise.resolve())
   const pendingRef = useRef(0)
@@ -182,13 +205,27 @@ export function BatchManager({ onStartConversion }: { onStartConversion?: (files
       return
     }
 
-    const accepted = newFiles.slice(0, remaining)
-    setFiles((prev) => [...prev, ...accepted])
+    // Segunda barreira: garante que so entre o formato de entrada escolhido.
+    const compatible = newFiles.filter(
+      (file) => isSupportedInput(file.extension) && isAcceptedExtension(inputFormat, file.extension),
+    )
+    const incompatible = newFiles.length - compatible.length
 
-    if (newFiles.length > accepted.length) {
+    if (compatible.length === 0) {
       setNotice({
         type: 'error',
-        text: `Apenas ${accepted.length} arquivo(s) adicionado(s): o limite é ${MAX_FILES} por sessão.`,
+        text: `Nenhum arquivo aceito: o formato de entrada selecionado é .${toLabel(inputFormat)}.`,
+      })
+      return
+    }
+
+    const accepted = compatible.slice(0, remaining)
+    setFiles((prev) => [...prev, ...accepted])
+
+    if (incompatible > 0) {
+      setNotice({
+        type: 'error',
+        text: `${incompatible} arquivo(s) ignorado(s): o formato de entrada selecionado é .${toLabel(inputFormat)}.`,
       })
     }
 
@@ -206,152 +243,318 @@ export function BatchManager({ onStartConversion }: { onStartConversion?: (files
 
   const handleClearAll = () => {
     setFiles([])
-    setGlobalFormat('')
     setUploadProgress(0)
+    setNotice(null)
+    setConversionId(null)
+    setConversionJob(null)
+  }
+
+  const handleClearResults = () => {
+    setConversionId(null)
+    setConversionJob(null)
     setNotice(null)
   }
 
-  const handleFormatChange = (id: string, format: string) => {
-    setFiles((prev) => prev.map((f) => (f.id === id ? { ...f, outputFormat: format } : f)))
+  const handleInputFormatChange = (format: string) => {
+    setInputFormat(format)
+
+    // A saida precisa continuar valida para a nova entrada.
+    setOutputFormat((current) =>
+      current && !isRedundantConversion(format, current) ? current : '',
+    )
+
+    if (filesRef.current.length > 0) {
+      setFiles([])
+      setConversionId(null)
+      setConversionJob(null)
+      setUploadProgress(0)
+      setNotice({
+        type: 'error',
+        text: `A lista foi limpa porque o formato de entrada mudou para .${toLabel(format)}.`,
+      })
+    }
   }
 
-  const handleGlobalFormatChange = (format: string) => {
-    setGlobalFormat(format)
-    setFiles((prev) => prev.map((f) => ({ ...f, outputFormat: format })))
+  const handleDownload = (result: ConversionResult) => {
+    if (!conversionId) return
+    setNotice(null)
+
+    downloadMutation.mutate(
+      { jobId: conversionId, fileId: result.fileId },
+      {
+        onSuccess: (blob) => {
+          const url = URL.createObjectURL(blob)
+          const link = document.createElement('a')
+          link.href = url
+          link.download = result.outputName
+          document.body.appendChild(link)
+          link.click()
+          link.remove()
+          URL.revokeObjectURL(url)
+        },
+        onError: (error) => {
+          setNotice({
+            type: 'error',
+            text: `Falha ao baixar "${result.outputName}": ${error.message}`,
+          })
+        },
+      },
+    )
   }
 
   const handleStart = () => {
-    if (!onStartConversion) return
-    const validFiles = files.filter((f) => f.outputFormat && f.status !== 'error')
-    if (validFiles.length === 0) return
-    onStartConversion(validFiles, globalFormat)
+    if (!inputFormat || !outputFormat) return
+
+    const targets = files.filter((f) => f.serverId && f.status !== 'error' && f.status !== 'converting')
+    if (targets.length === 0) return
+
+    const targetIds = new Set(targets.map((f) => f.id))
+    const fileIds = targets.map((f) => f.serverId as string)
+
+    setFiles((prev) =>
+      prev.map((f) => (targetIds.has(f.id) ? { ...f, outputFormat, error: undefined } : f)),
+    )
+    setNotice(null)
+    onStartConversion?.(targets, outputFormat)
+
+    startMutation.mutate(
+      { fileIds, outputFormat },
+      {
+        onSuccess: (job) => {
+          const results = job.results ?? []
+          const byFileId = new Map(results.map((result) => [result.fileId, result]))
+
+          setConversionId(job.id)
+          setConversionJob(job)
+
+          setFiles((prev) =>
+            prev.map((f) => {
+              if (!targetIds.has(f.id)) return f
+              const result = f.serverId ? byFileId.get(f.serverId) : undefined
+              if (result) {
+                return { ...f, status: 'completed', progress: 100, outputUrl: result.outputUrl, error: undefined }
+              }
+              return { ...f, status: 'error', progress: 0, error: job.error ?? 'Falha na conversão' }
+            }),
+          )
+
+          const failed = targets.length - results.length
+          setNotice({
+            type: failed > 0 ? 'error' : 'success',
+            text:
+              failed > 0
+                ? `${results.length} de ${targets.length} arquivo(s) convertido(s). ${job.error ?? ''}`.trim()
+                : `${results.length} arquivo(s) convertido(s) para .${job.outputFormat}.`,
+          })
+        },
+        onError: (error) => {
+          setConversionId(null)
+          setConversionJob(null)
+          setFiles((prev) =>
+            prev.map((f) =>
+              targetIds.has(f.id)
+                ? { ...f, status: 'uploaded', progress: 100, error: error.message }
+                : f,
+            ),
+          )
+          setNotice({ type: 'error', text: `Falha ao converter os arquivos: ${error.message}` })
+        },
+      },
+    )
   }
 
-  const canConvert = files.some((f) => f.outputFormat && f.status !== 'error' && f.status !== 'converting')
-
-  const uploadedCount = files.filter((f) => f.status === 'uploaded').length
+const isConverting = startMutation.isPending
+  const hasUploadedFiles = files.some((f) => f.serverId && f.status !== 'error')
+  const canConvert =
+    Boolean(inputFormat && outputFormat) && hasUploadedFiles && !isConverting && !isUploading
   const errorCount = files.filter((f) => f.status === 'error').length
   const totalSize = files.reduce((acc, f) => acc + f.size, 0)
 
+  const { data: jobDetail } = useConversion(conversionId)
+  const activeJob = jobDetail ?? conversionJob
+  const results = activeJob?.results ?? []
+
+  const acceptedFiles = buildAccept(inputFormat)
+
   return (
-    <div className="space-y-6">
-      <Card>
-        <CardHeader>
-          <CardTitle>Conversão em Lote</CardTitle>
-        </CardHeader>
-        <CardContent>
+    <Card>
+      <CardContent>
+        <div className="flex flex-col gap-4 sm:flex-row">
+          <Select
+            id="input-format"
+            label="Formato dos arquivos"
+            value={inputFormat}
+            onChange={(event) => handleInputFormatChange(event.target.value)}
+            options={INPUT_FORMATS.map((format) => ({ value: format, label: toLabel(format) }))}
+            placeholder="Selecione"
+            className="h-10 w-full sm:w-40"
+          />
+
+          <Select
+            id="output-format"
+            label="Converter para"
+            value={outputFormat}
+            onChange={(event) => setOutputFormat(event.target.value)}
+            options={getOutputOptions(inputFormat)}
+            placeholder={inputFormat ? 'Selecione' : 'Escolha o formato de entrada'}
+            disabled={!inputFormat}
+            className="h-10 w-full sm:w-40"
+          />
+        </div>
+
+        <div className="mt-6">
           <FileDropzone
             onFilesAdd={handleFilesAdd}
-            disabled={isUploading || files.length >= MAX_FILES}
+            inputFormat={inputFormat}
+            acceptedFiles={acceptedFiles}
+            disabled={!inputFormat || isUploading || isConverting || files.length >= MAX_FILES}
             maxFiles={Math.max(1, MAX_FILES - files.length)}
-            acceptedFiles={Object.fromEntries(
-              Object.entries(SUPPORTED_FORMATS).map(([ext, formats]) => [`.${ext}`, formats])
+            compact={files.length > 0}
+          />
+        </div>
+
+        {files.length > 0 && (
+          <div className="mt-4">
+            <FileList
+              files={files}
+              onRemove={handleRemove}
+              onRetry={handleRetry}
+              uploading={isUploading}
+            />
+          </div>
+        )}
+
+        {files.length > 0 && (
+          <>
+            {notice && (
+              <div
+                className={cn(
+                  'mt-4 flex items-start gap-2 rounded-lg border px-4 py-3 text-[13px] leading-[18px]',
+                  notice.type === 'success'
+                    ? 'border-green-200 bg-green-50 text-green-700'
+                    : 'border-red-200 bg-red-50 text-red-700',
+                )}
+              >
+                {notice.type === 'success' ? (
+                  <CheckCircle className="mt-px h-4 w-4 shrink-0" aria-hidden="true" />
+                ) : (
+                  <AlertCircle className="mt-px h-4 w-4 shrink-0" aria-hidden="true" />
+                )}
+                <span>{notice.text}</span>
+              </div>
             )}
-          />
 
-          <FileList
-            files={files}
-            onRemove={handleRemove}
-            onRetry={handleRetry}
-            onFormatChange={handleFormatChange}
-            availableFormats={SUPPORTED_FORMATS}
-            uploading={isUploading}
-          />
+            {isUploading && (
+              <div className="mt-4 flex items-center gap-3">
+                <Progress value={uploadProgress} className="flex-1" />
+                <span className="numeric w-10 shrink-0 text-right text-xs text-gray-500">{uploadProgress}%</span>
+              </div>
+            )}
 
-          {files.length > 0 && (
-            <div className="mt-4 space-y-4">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-4 text-sm text-gray-500">
-                  <span>{files.length} arquivo(s)</span>
-                  <span>{formatFileSize(totalSize)}</span>
-                  <Badge variant="success">{uploadedCount} enviado(s)</Badge>
-                  {errorCount > 0 && <Badge variant="error">{errorCount} com erro</Badge>}
+            {isConverting && (
+              <div className="mt-4 flex items-center gap-2.5 rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-[13px] text-gray-600">
+                <Loader2 className="h-4 w-4 shrink-0 animate-spin text-gray-400" aria-hidden="true" />
+                <span>Convertendo arquivos no servidor...</span>
+              </div>
+            )}
+
+            {results.length > 0 && (
+              <div className="mt-4 overflow-hidden rounded-lg border border-gray-200">
+                <div className="flex items-center justify-between gap-3 border-b border-gray-200 bg-gray-50 px-4 py-2">
+                  <p className="text-[13px] font-medium text-gray-700">
+                    {results.length} {results.length === 1 ? 'arquivo convertido' : 'arquivos convertidos'}
+                    <span className="font-normal text-gray-500">
+                      {' '}
+                      · job {conversionId?.slice(0, 8)}
+                    </span>
+                  </p>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={handleClearResults}
+                    disabled={isConverting || isUploading}
+                  >
+                    Limpar resultados
+                  </Button>
                 </div>
-                <div className="flex items-center gap-2">
-                  <Select
-                    value={globalFormat}
-                    onChange={(e) => handleGlobalFormatChange(e.target.value)}
-                    options={getCommonFormats(files)}
-                    placeholder="Aplicar a todos..."
-                    disabled={isUploading}
-                    className="w-48"
-                  />
-                </div>
+                <ul className="divide-y divide-gray-200">
+                  {results.map((result) => (
+                    <li key={result.fileId} className="flex items-center gap-3 px-4 py-2.5">
+                      <CheckCircle className="h-4 w-4 shrink-0 text-green-600" aria-hidden="true" />
+                      <span className="min-w-0 flex-1 truncate text-[13px] text-gray-900">
+                        {result.outputName}
+                      </span>
+                      <span className="numeric shrink-0 text-xs text-gray-500">
+                        {formatFileSize(result.outputSize)}
+                      </span>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="shrink-0"
+                        disabled={downloadMutation.isPending || isConverting}
+                        onClick={() => handleDownload(result)}
+                        aria-label={`Baixar ${result.outputName}`}
+                        title={`Baixar ${result.outputName}`}
+                      >
+                        <Download className="mr-1.5 h-3.5 w-3.5" aria-hidden="true" />
+                        Baixar
+                      </Button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            <div className="mt-6 flex flex-col gap-4 border-t border-gray-200 pt-5 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex flex-wrap items-center gap-x-2 text-[13px] text-gray-500">
+                <span className="numeric">
+                  {files.length} {files.length === 1 ? 'arquivo' : 'arquivos'}
+                </span>
+                <span aria-hidden="true" className="text-gray-300">
+                  ·
+                </span>
+                <span className="numeric">{formatFileSize(totalSize)}</span>
+                {errorCount > 0 && (
+                  <>
+                    <span aria-hidden="true" className="text-gray-300">
+                      ·
+                    </span>
+                    <span className="numeric font-medium text-red-600">
+                      {errorCount} com erro
+                    </span>
+                  </>
+                )}
               </div>
 
-              {isUploading && (
-                <div className="flex items-center gap-3">
-                  <Progress value={uploadProgress} className="flex-1" />
-                  <span className="text-sm text-gray-500 w-12 text-right">{uploadProgress}%</span>
-                </div>
-              )}
-
-              {notice && (
-                <div
-                  className={cn(
-                    'flex items-start gap-2 rounded-lg border p-3 text-sm',
-                    notice.type === 'success'
-                      ? 'border-green-200 bg-green-50 text-green-700'
-                      : 'border-red-200 bg-red-50 text-red-700',
-                  )}
+              <div className="flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:gap-3">
+                <Button
+                  variant="outline"
+                  onClick={handleClearAll}
+                  disabled={isUploading || isConverting || files.length === 0}
+                  className="w-full sm:w-auto"
                 >
-                  {notice.type === 'success' ? (
-                    <CheckCircle className="h-4 w-4 mt-0.5 shrink-0" />
-                  ) : (
-                    <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
-                  )}
-                  <span>{notice.text}</span>
-                </div>
-              )}
-
-              <div className="flex items-center justify-end gap-3 pt-4 border-t border-gray-200">
-                <Button variant="outline" onClick={handleClearAll} disabled={isUploading || files.length === 0}>
-                  <Trash2 className="h-4 w-4 mr-2" />
+                  <Trash2 className="mr-2 h-4 w-4" aria-hidden="true" />
                   Limpar tudo
                 </Button>
+
                 <Button
+                  size="lg"
                   onClick={handleStart}
-                  disabled={isUploading || !canConvert || !onStartConversion}
-                  title={!onStartConversion ? 'Conversão ainda não disponível' : undefined}
+                  disabled={!canConvert}
+                  className="w-full shrink-0 sm:w-auto"
                 >
-                  <Play className="h-4 w-4 mr-2" />
-                  Iniciar Conversão
+                  {isConverting ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" />
+                  ) : (
+                    <Play className="mr-2 h-4 w-4" aria-hidden="true" />
+                  )}
+                  {isConverting ? 'Convertendo...' : 'Iniciar Conversão'}
                 </Button>
               </div>
-
-              {!onStartConversion && (
-                <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
-                  <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
-                  <span>
-                    A conversão ainda não está disponível: a rota de conversão do servidor responde
-                    <span className="font-medium"> 501 Not Implemented</span>. Os arquivos acima já
-                    foram enviados e ficam listados; o botão será habilitado quando o processamento
-                    existir no backend.
-                  </span>
-                </div>
-              )}
             </div>
-          )}
-        </CardContent>
-      </Card>
-    </div>
+          </>
+        )}
+      </CardContent>
+    </Card>
   )
-}
-
-function getCommonFormats(files: FileItem[]): Array<{ value: string; label: string }> {
-  if (files.length === 0) return []
-  
-  const firstFile = files[0]
-  const formats = SUPPORTED_FORMATS[firstFile.extension] || []
-  
-  if (files.length === 1) {
-    return formats.map((f) => ({ value: f, label: f.toUpperCase() }))
-  }
-
-  const commonFormats = files.slice(1).reduce((acc, file) => {
-    const fileFormats = SUPPORTED_FORMATS[file.extension] || []
-    return acc.filter((f) => fileFormats.includes(f))
-  }, formats)
-
-  return commonFormats.map((f) => ({ value: f, label: f.toUpperCase() }))
 }

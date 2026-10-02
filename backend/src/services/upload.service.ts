@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto'
 import path from 'node:path'
 import { pipeline } from 'node:stream/promises'
 import { lookup as lookupMimeType } from 'mime-types'
-import type { MultipartFile } from '@fastify/multipart'
+import type { Multipart, MultipartFile } from '@fastify/multipart'
 import { config } from '../config/index.js'
 import {
   ALLOWED_UPLOAD_FIELDS,
@@ -33,17 +33,7 @@ export class UploadValidationError extends Error {
   }
 }
 
-export async function processUpload(parts: MultipartFile[]): Promise<UploadResponse> {
-  if (parts.length === 0) {
-    throw new UploadValidationError('Nenhum arquivo foi enviado.')
-  }
-
-  if (parts.length > config.upload.maxFiles) {
-    throw new UploadValidationError(
-      `Quantidade excedida: sao permitidos ate ${config.upload.maxFiles} arquivos por envio.`,
-    )
-  }
-
+export async function processUpload(parts: AsyncIterable<Multipart>): Promise<UploadResponse> {
   await ensureStorageDirs()
 
   const uploadId = randomUUID()
@@ -51,8 +41,21 @@ export async function processUpload(parts: MultipartFile[]): Promise<UploadRespo
 
   const records: UploadedFileRecord[] = []
   const rejected: RejectedFile[] = []
+  let partCount = 0
 
-  for (const part of parts) {
+  // Cada part.file precisa ser consumido dentro deste laco: o busboy so avanca para a
+  // proxima parte quando o stream da atual e drenado.
+  for await (const part of parts) {
+    if (part.type !== 'file') continue
+
+    partCount += 1
+
+    if (partCount > config.upload.maxFiles) {
+      throw new UploadValidationError(
+        `Quantidade excedida: sao permitidos ate ${config.upload.maxFiles} arquivos por envio.`,
+      )
+    }
+
     const originalName = sanitizeFileName(part.filename || 'arquivo')
     const extension = path.extname(originalName).replace('.', '').toLowerCase()
 
@@ -107,6 +110,10 @@ export async function processUpload(parts: MultipartFile[]): Promise<UploadRespo
       path: destination,
       uploadedAt: createdAt,
     })
+  }
+
+  if (partCount === 0) {
+    throw new UploadValidationError('Nenhum arquivo foi enviado.')
   }
 
   if (records.length === 0) {

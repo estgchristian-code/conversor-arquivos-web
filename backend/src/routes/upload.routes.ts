@@ -1,4 +1,3 @@
-import type { MultipartFile } from '@fastify/multipart'
 import type { FastifyPluginAsync } from 'fastify'
 import { processUpload } from '../services/upload.service.js'
 import { config } from '../config/index.js'
@@ -18,12 +17,7 @@ export const uploadRoutes: FastifyPluginAsync = async (app) => {
       return reply.code(415).send(payload)
     }
 
-    const parts: MultipartFile[] = []
-    for await (const part of request.parts()) {
-      if (part.type === 'file') parts.push(part)
-    }
-
-    const result = await processUpload(parts)
+    const result = await processUpload(request.parts())
 
     uploadRoutesLogger.info(
       { uploadId: result.uploadId, accepted: result.files.length, rejected: result.rejected.length },
