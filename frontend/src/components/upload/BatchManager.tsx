@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Trash2, Play, CheckCircle, AlertCircle, Download, Loader2 } from 'lucide-react'
+import { Trash2, CheckCircle, AlertCircle, Download, Loader2 } from 'lucide-react'
 import { cn, formatFileSize, sanitizeFileName } from '../../utils/helpers'
 import { useConversion, useDownloadFile, useStartConversion, useUpload } from '../../hooks/useConversions'
 import { Button } from '../ui/Button'
@@ -90,10 +90,23 @@ export function BatchManager({ onStartConversion }: { onStartConversion?: (files
   const chainRef = useRef<Promise<void>>(Promise.resolve())
   const pendingRef = useRef(0)
   const enqueuedRef = useRef<Set<string>>(new Set())
+  const autoConvertedIdsRef = useRef<Set<string>>(new Set())
 
   useEffect(() => {
     filesRef.current = files
   }, [files])
+
+  useEffect(() => {
+    if (isUploading || startMutation.isPending) return
+    if (!inputFormat || !outputFormat) return
+
+    const pending = files.filter(
+      (f) => f.serverId && f.status === 'uploaded' && !autoConvertedIdsRef.current.has(f.id),
+    )
+    if (pending.length === 0) return
+
+    handleStart(new Set(pending.map((f) => f.id)))
+  }, [files, isUploading, inputFormat, outputFormat, startMutation.isPending])
 
   const applyServerResult = (batch: FileItem[], result: { uploadId: string; files: Array<{ id: string; originalName: string; size: number; url: string }>; rejected: RejectedFile[] }) => {
     const byName = new Map(result.files.map((file) => [sanitizeFileName(file.originalName), file]))
@@ -247,12 +260,14 @@ export function BatchManager({ onStartConversion }: { onStartConversion?: (files
     setNotice(null)
     setConversionId(null)
     setConversionJob(null)
+    autoConvertedIdsRef.current.clear()
   }
 
   const handleClearResults = () => {
     setConversionId(null)
     setConversionJob(null)
     setNotice(null)
+    autoConvertedIdsRef.current.clear()
   }
 
   const handleInputFormatChange = (format: string) => {
@@ -268,6 +283,7 @@ export function BatchManager({ onStartConversion }: { onStartConversion?: (files
       setConversionId(null)
       setConversionJob(null)
       setUploadProgress(0)
+      autoConvertedIdsRef.current.clear()
       setNotice({
         type: 'error',
         text: `A lista foi limpa porque o formato de entrada mudou para .${toLabel(format)}.`,
@@ -302,17 +318,25 @@ export function BatchManager({ onStartConversion }: { onStartConversion?: (files
     )
   }
 
-  const handleStart = () => {
+  const handleStart = (targetIds?: Set<string>) => {
     if (!inputFormat || !outputFormat) return
 
-    const targets = files.filter((f) => f.serverId && f.status !== 'error' && f.status !== 'converting')
+    const targets = files.filter(
+      (f) =>
+        f.serverId &&
+        f.status !== 'error' &&
+        f.status !== 'converting' &&
+        (targetIds === undefined || targetIds.has(f.id)),
+    )
     if (targets.length === 0) return
 
-    const targetIds = new Set(targets.map((f) => f.id))
+    targets.forEach((f) => autoConvertedIdsRef.current.add(f.id))
+
+    const targetSet = new Set(targets.map((f) => f.id))
     const fileIds = targets.map((f) => f.serverId as string)
 
     setFiles((prev) =>
-      prev.map((f) => (targetIds.has(f.id) ? { ...f, outputFormat, error: undefined } : f)),
+      prev.map((f) => (targetSet.has(f.id) ? { ...f, status: 'converting' as const, outputFormat, error: undefined } : f)),
     )
     setNotice(null)
     onStartConversion?.(targets, outputFormat)
@@ -329,7 +353,7 @@ export function BatchManager({ onStartConversion }: { onStartConversion?: (files
 
           setFiles((prev) =>
             prev.map((f) => {
-              if (!targetIds.has(f.id)) return f
+              if (!targetSet.has(f.id)) return f
               const result = f.serverId ? byFileId.get(f.serverId) : undefined
               if (result) {
                 return { ...f, status: 'completed', progress: 100, outputUrl: result.outputUrl, error: undefined }
@@ -352,7 +376,7 @@ export function BatchManager({ onStartConversion }: { onStartConversion?: (files
           setConversionJob(null)
           setFiles((prev) =>
             prev.map((f) =>
-              targetIds.has(f.id)
+              targetSet.has(f.id)
                 ? { ...f, status: 'uploaded', progress: 100, error: error.message }
                 : f,
             ),
@@ -364,9 +388,6 @@ export function BatchManager({ onStartConversion }: { onStartConversion?: (files
   }
 
 const isConverting = startMutation.isPending
-  const hasUploadedFiles = files.some((f) => f.serverId && f.status !== 'error')
-  const canConvert =
-    Boolean(inputFormat && outputFormat) && hasUploadedFiles && !isConverting && !isUploading
   const errorCount = files.filter((f) => f.status === 'error').length
   const totalSize = files.reduce((acc, f) => acc + f.size, 0)
 
@@ -402,18 +423,20 @@ const isConverting = startMutation.isPending
           />
         </div>
 
-        <div className="mt-6">
-          <FileDropzone
-            onFilesAdd={handleFilesAdd}
-            inputFormat={inputFormat}
-            acceptedFiles={acceptedFiles}
-            disabled={!inputFormat || isUploading || isConverting || files.length >= MAX_FILES}
-            maxFiles={Math.max(1, MAX_FILES - files.length)}
-            compact={files.length > 0}
-          />
-        </div>
+        {results.length === 0 && (
+          <div className="mt-6">
+            <FileDropzone
+              onFilesAdd={handleFilesAdd}
+              inputFormat={inputFormat}
+              acceptedFiles={acceptedFiles}
+              disabled={!inputFormat || isUploading || isConverting || files.length >= MAX_FILES}
+              maxFiles={Math.max(1, MAX_FILES - files.length)}
+              compact={files.length > 0}
+            />
+          </div>
+        )}
 
-        {files.length > 0 && (
+        {files.length > 0 && results.length === 0 && (
           <div className="mt-4">
             <FileList
               files={files}
@@ -463,10 +486,6 @@ const isConverting = startMutation.isPending
                 <div className="flex items-center justify-between gap-3 border-b border-gray-200 bg-gray-50 px-4 py-2">
                   <p className="text-[13px] font-medium text-gray-700">
                     {results.length} {results.length === 1 ? 'arquivo convertido' : 'arquivos convertidos'}
-                    <span className="font-normal text-gray-500">
-                      {' '}
-                      · job {conversionId?.slice(0, 8)}
-                    </span>
                   </p>
                   <Button
                     variant="ghost"
@@ -481,9 +500,14 @@ const isConverting = startMutation.isPending
                   {results.map((result) => (
                     <li key={result.fileId} className="flex items-center gap-3 px-4 py-2.5">
                       <CheckCircle className="h-4 w-4 shrink-0 text-green-600" aria-hidden="true" />
-                      <span className="min-w-0 flex-1 truncate text-[13px] text-gray-900">
-                        {result.outputName}
-                      </span>
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-[13px] font-medium text-gray-900" title={result.originalName}>
+                          {result.originalName}
+                        </p>
+                        <p className="numeric mt-0.5 truncate text-xs text-gray-500" title={result.outputName}>
+                          {result.outputName}
+                        </p>
+                      </div>
                       <span className="numeric shrink-0 text-xs text-gray-500">
                         {formatFileSize(result.outputSize)}
                       </span>
@@ -535,20 +559,6 @@ const isConverting = startMutation.isPending
                 >
                   <Trash2 className="mr-2 h-4 w-4" aria-hidden="true" />
                   Limpar tudo
-                </Button>
-
-                <Button
-                  size="lg"
-                  onClick={handleStart}
-                  disabled={!canConvert}
-                  className="w-full shrink-0 sm:w-auto"
-                >
-                  {isConverting ? (
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" />
-                  ) : (
-                    <Play className="mr-2 h-4 w-4" aria-hidden="true" />
-                  )}
-                  {isConverting ? 'Convertendo...' : 'Iniciar Conversão'}
                 </Button>
               </div>
             </div>

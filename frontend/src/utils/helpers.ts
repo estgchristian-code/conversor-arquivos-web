@@ -25,7 +25,14 @@ export function getFileExtension(filename: string): string {
 }
 
 export function sanitizeFileName(name: string): string {
-  return name.split(/[\\/]/).pop()?.replace(/[^a-zA-Z0-9._-]/g, '_') || 'arquivo'
+  const base = (name.split(/[\\/]/).pop() ?? '')
+    .replace(/\.\.+/g, '.')
+    .replace(/[<>:"/\\|?*]/g, '_')
+    .replace(/[\x00-\x1F\x7F]/g, '_')
+    .trim()
+    .replace(/[. ]+$/, '')
+
+  return base.replace(/[^\p{L}\p{N}\p{M}._-]+/gu, '_') || 'arquivo'
 }
 
 export function getMimeTypeFromExtension(ext: string): string {
