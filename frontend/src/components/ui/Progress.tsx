@@ -20,15 +20,15 @@ export const Progress = ({
   const percentage = Math.min(Math.max((value / max) * 100, 0), 100)
 
   const sizes = {
-    sm: 'h-1',
-    md: 'h-1.5',
+    sm: 'h-1.5',
+    md: 'h-[6px]',
     lg: 'h-2',
   }
 
   const tones = {
     accent: 'bg-primary-600',
     success: 'bg-green-600',
-    error: 'bg-red-500',
+    error: 'bg-red-600',
   }
 
   return (
@@ -44,7 +44,7 @@ export const Progress = ({
         />
       </div>
       {showLabel && (
-        <div className="mt-1 flex justify-between text-xs text-gray-500">
+        <div className="mt-1.5 flex justify-between text-[13px] text-gray-500">
           <span>Progresso</span>
           <span className="numeric">{Math.round(percentage)}%</span>
         </div>

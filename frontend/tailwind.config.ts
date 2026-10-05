@@ -8,17 +8,35 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
+        gray: {
+          50: '#F4F7FB',
+          100: '#F1F5F9',
+          200: '#E2E8F0',
+          300: '#CBD5E1',
+          400: '#94A3B8',
+          500: '#64748B',
+          600: '#475569',
+          700: '#334155',
+          800: '#1E293B',
+          900: '#172033',
+        },
         primary: {
-          50: '#F1F4F9',
-          100: '#E2EAF4',
-          200: '#C6D5E9',
-          300: '#9DB4D6',
-          400: '#6B8ABE',
-          500: '#4A6B9F',
-          600: '#2F4B7C',
-          700: '#26405F',
-          800: '#1E3149',
-          900: '#162435',
+          50: '#EFF6FF',
+          100: '#DBEAFE',
+          200: '#BFDBFE',
+          300: '#93C5FD',
+          400: '#60A5FA',
+          500: '#3B82F6',
+          600: '#2563EB',
+          700: '#1D4ED8',
+          800: '#1E40AF',
+          900: '#1E3A8A',
+        },
+        accent: {
+          50: '#ECFEFF',
+          300: '#67E8F9',
+          500: '#06B6D4',
+          600: '#0891B2',
         },
       },
       fontFamily: {
@@ -42,6 +60,15 @@ const config: Config = {
       boxShadow: {
         1: '0 1px 2px rgba(16, 24, 40, 0.05)',
         2: '0 4px 8px -2px rgba(16, 24, 40, 0.08)',
+      },
+      fontSize: {
+        xs: ['13px', '18px'],
+        sm: ['15px', '22px'],
+        base: ['16px', '24px'],
+        lg: ['17px', '24px'],
+        xl: ['20px', '28px'],
+        '2xl': ['24px', '30px'],
+        '3xl': ['28px', '34px'],
       },
       transitionTimingFunction: {
         out: 'cubic-bezier(0.2, 0, 0, 1)',

@@ -4,7 +4,7 @@ interface CardProps extends React.HTMLAttributes<HTMLDivElement> {}
 
 export const Card = ({ className, children, ...props }: CardProps) => {
   return (
-    <div className={cn('rounded-lg border border-gray-200 bg-white', className)} {...props}>
+    <div className={cn('rounded-xl border border-gray-200 bg-white shadow-1', className)} {...props}>
       {children}
     </div>
   )
@@ -12,7 +12,7 @@ export const Card = ({ className, children, ...props }: CardProps) => {
 
 export const CardHeader = ({ className, children, ...props }: CardProps) => {
   return (
-    <div className={cn('flex flex-col space-y-1.5 p-6', className)} {...props}>
+    <div className={cn('flex flex-col space-y-1.5 p-8', className)} {...props}>
       {children}
     </div>
   )
@@ -20,7 +20,7 @@ export const CardHeader = ({ className, children, ...props }: CardProps) => {
 
 export const CardTitle = ({ className, children, ...props }: React.HTMLAttributes<HTMLHeadingElement>) => {
   return (
-    <h3 className={cn('text-[15px] font-semibold leading-[22px] text-gray-900', className)} {...props}>
+    <h3 className={cn('text-[17px] font-semibold leading-6 text-gray-900', className)} {...props}>
       {children}
     </h3>
   )
@@ -28,7 +28,7 @@ export const CardTitle = ({ className, children, ...props }: React.HTMLAttribute
 
 export const CardDescription = ({ className, children, ...props }: React.HTMLAttributes<HTMLParagraphElement>) => {
   return (
-    <p className={cn('text-[13px] leading-[18px] text-gray-500', className)} {...props}>
+    <p className={cn('text-[15px] leading-[22px] text-gray-500', className)} {...props}>
       {children}
     </p>
   )
@@ -36,7 +36,7 @@ export const CardDescription = ({ className, children, ...props }: React.HTMLAtt
 
 export const CardContent = ({ className, children, ...props }: CardProps) => {
   return (
-    <div className={cn('p-6 pt-0', className)} {...props}>
+    <div className={cn('p-8 pt-0', className)} {...props}>
       {children}
     </div>
   )
@@ -44,7 +44,7 @@ export const CardContent = ({ className, children, ...props }: CardProps) => {
 
 export const CardFooter = ({ className, children, ...props }: CardProps) => {
   return (
-    <div className={cn('flex items-center p-6 pt-0', className)} {...props}>
+    <div className={cn('flex items-center p-8 pt-0', className)} {...props}>
       {children}
     </div>
   )

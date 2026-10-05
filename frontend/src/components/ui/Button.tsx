@@ -14,21 +14,21 @@ const baseStyles =
 
 const variants = {
   primary:
-    'bg-gray-900 text-white hover:bg-gray-800 disabled:bg-gray-100 disabled:text-gray-400 disabled:hover:bg-gray-100',
+    'bg-primary-600 text-white hover:bg-primary-700 disabled:bg-gray-100 disabled:text-gray-400 disabled:hover:bg-gray-100',
   secondary:
-    'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50 hover:text-gray-900 disabled:text-gray-400 disabled:border-gray-200 disabled:hover:bg-white',
+    'bg-white text-gray-700 border border-gray-200 hover:bg-gray-50 hover:text-gray-900 disabled:text-gray-400 disabled:bg-gray-50 disabled:hover:bg-gray-50',
   outline:
-    'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50 hover:text-gray-900 disabled:text-gray-400 disabled:border-gray-200 disabled:hover:bg-white',
+    'bg-white text-gray-700 border border-gray-200 hover:border-gray-300 hover:bg-gray-50 hover:text-gray-900 disabled:text-gray-400 disabled:hover:bg-white',
   ghost:
-    'bg-transparent text-gray-500 hover:bg-gray-100 hover:text-gray-900 disabled:text-gray-300 disabled:hover:bg-transparent',
+    'bg-transparent text-gray-600 hover:bg-gray-100 hover:text-gray-900 disabled:text-gray-300 disabled:hover:bg-transparent',
   danger: 'bg-red-600 text-white hover:bg-red-700 disabled:bg-gray-100 disabled:text-gray-400',
 } satisfies Record<ButtonVariant, string>
 
 const sizes = {
-  sm: 'h-8 px-3 text-[13px] gap-1.5',
-  md: 'h-10 px-4 text-sm gap-2',
-  lg: 'h-11 px-5 text-sm gap-2',
-  icon: 'h-9 w-9 sm:h-8 sm:w-8',
+  sm: 'h-9 px-3 text-[13px] gap-1.5',
+  md: 'h-11 px-4 text-[15px] gap-2',
+  lg: 'h-12 px-6 text-[15px] gap-2',
+  icon: 'h-10 w-10',
 } satisfies Record<ButtonSize, string>
 
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(

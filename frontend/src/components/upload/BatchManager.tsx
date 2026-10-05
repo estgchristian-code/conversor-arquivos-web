@@ -6,6 +6,7 @@ import { Button } from '../ui/Button'
 import { Card, CardContent } from '../ui/Card'
 import { Select } from '../ui/Select'
 import { Progress } from '../ui/Progress'
+import { Badge } from '../ui/Badge'
 import { FileDropzone, FileList } from './FileDropzone'
 import type { ConversionJob, ConversionResult, FileItem, RejectedFile } from '../../types'
 
@@ -408,7 +409,7 @@ const isConverting = startMutation.isPending
             onChange={(event) => handleInputFormatChange(event.target.value)}
             options={INPUT_FORMATS.map((format) => ({ value: format, label: toLabel(format) }))}
             placeholder="Selecione"
-            className="h-10 w-full sm:w-40"
+            className="w-full sm:w-56"
           />
 
           <Select
@@ -419,12 +420,12 @@ const isConverting = startMutation.isPending
             options={getOutputOptions(inputFormat)}
             placeholder={inputFormat ? 'Selecione' : 'Escolha o formato de entrada'}
             disabled={!inputFormat}
-            className="h-10 w-full sm:w-40"
+            className="w-full sm:w-56"
           />
         </div>
 
         {results.length === 0 && (
-          <div className="mt-6">
+          <div className="mt-7">
             <FileDropzone
               onFilesAdd={handleFilesAdd}
               inputFormat={inputFormat}
@@ -437,7 +438,7 @@ const isConverting = startMutation.isPending
         )}
 
         {files.length > 0 && results.length === 0 && (
-          <div className="mt-4">
+          <div className="mt-5">
             <FileList
               files={files}
               onRemove={handleRemove}
@@ -452,41 +453,44 @@ const isConverting = startMutation.isPending
             {notice && (
               <div
                 className={cn(
-                  'mt-4 flex items-start gap-2 rounded-lg border px-4 py-3 text-[13px] leading-[18px]',
+                  'mt-5 flex items-start gap-2.5 rounded-lg border px-5 py-4 text-[14px] leading-5',
                   notice.type === 'success'
                     ? 'border-green-200 bg-green-50 text-green-700'
                     : 'border-red-200 bg-red-50 text-red-700',
                 )}
               >
                 {notice.type === 'success' ? (
-                  <CheckCircle className="mt-px h-4 w-4 shrink-0" aria-hidden="true" />
+                  <CheckCircle className="mt-px h-5 w-5 shrink-0" aria-hidden="true" />
                 ) : (
-                  <AlertCircle className="mt-px h-4 w-4 shrink-0" aria-hidden="true" />
+                  <AlertCircle className="mt-px h-5 w-5 shrink-0" aria-hidden="true" />
                 )}
                 <span>{notice.text}</span>
               </div>
             )}
 
             {isUploading && (
-              <div className="mt-4 flex items-center gap-3">
+              <div className="mt-5 flex items-center gap-3.5">
                 <Progress value={uploadProgress} className="flex-1" />
-                <span className="numeric w-10 shrink-0 text-right text-xs text-gray-500">{uploadProgress}%</span>
+                <span className="numeric w-11 shrink-0 text-right text-[13px] text-gray-500">{uploadProgress}%</span>
               </div>
             )}
 
             {isConverting && (
-              <div className="mt-4 flex items-center gap-2.5 rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-[13px] text-gray-600">
-                <Loader2 className="h-4 w-4 shrink-0 animate-spin text-gray-400" aria-hidden="true" />
+              <div className="mt-5 flex items-center gap-3 rounded-lg border border-gray-200 bg-gray-50 px-5 py-4 text-[15px] text-gray-700">
+                <Loader2 className="h-5 w-5 shrink-0 animate-spin text-primary-600" aria-hidden="true" />
                 <span>Convertendo arquivos no servidor...</span>
               </div>
             )}
 
             {results.length > 0 && (
-              <div className="mt-4 overflow-hidden rounded-lg border border-gray-200">
-                <div className="flex items-center justify-between gap-3 border-b border-gray-200 bg-gray-50 px-4 py-2">
-                  <p className="text-[13px] font-medium text-gray-700">
-                    {results.length} {results.length === 1 ? 'arquivo convertido' : 'arquivos convertidos'}
-                  </p>
+              <div className="mt-5 overflow-hidden rounded-xl border border-green-200">
+                <div className="flex flex-wrap items-center justify-between gap-3 border-b border-green-200 bg-green-50 px-5 py-3">
+                  <div className="flex items-center gap-2.5">
+                    <p className="text-[15px] font-semibold text-green-900">
+                      {results.length} {results.length === 1 ? 'arquivo convertido' : 'arquivos convertidos'}
+                    </p>
+                    <Badge variant="success">.{(activeJob?.outputFormat ?? outputFormat).toUpperCase()}</Badge>
+                  </div>
                   <Button
                     variant="ghost"
                     size="sm"
@@ -496,23 +500,26 @@ const isConverting = startMutation.isPending
                     Limpar resultados
                   </Button>
                 </div>
-                <ul className="divide-y divide-gray-200">
+                <ul className="divide-y divide-green-100">
                   {results.map((result) => (
-                    <li key={result.fileId} className="flex items-center gap-3 px-4 py-2.5">
-                      <CheckCircle className="h-4 w-4 shrink-0 text-green-600" aria-hidden="true" />
+                    <li
+                      key={result.fileId}
+                      className="flex min-h-[72px] items-center gap-3.5 px-5 py-4 transition-colors duration-150 hover:bg-green-50/60"
+                    >
+                      <CheckCircle className="h-5 w-5 shrink-0 text-green-600" aria-hidden="true" />
                       <div className="min-w-0 flex-1">
-                        <p className="truncate text-[13px] font-medium text-gray-900" title={result.originalName}>
+                        <p className="truncate text-[15px] font-medium text-gray-900" title={result.originalName}>
                           {result.originalName}
                         </p>
-                        <p className="numeric mt-0.5 truncate text-xs text-gray-500" title={result.outputName}>
+                        <p className="numeric mt-0.5 truncate text-[13px] text-gray-500" title={result.outputName}>
                           {result.outputName}
                         </p>
                       </div>
-                      <span className="numeric shrink-0 text-xs text-gray-500">
+                      <span className="numeric shrink-0 text-[13px] text-gray-500">
                         {formatFileSize(result.outputSize)}
                       </span>
                       <Button
-                        variant="outline"
+                        variant="primary"
                         size="sm"
                         className="shrink-0"
                         disabled={downloadMutation.isPending || isConverting}
@@ -520,7 +527,7 @@ const isConverting = startMutation.isPending
                         aria-label={`Baixar ${result.outputName}`}
                         title={`Baixar ${result.outputName}`}
                       >
-                        <Download className="mr-1.5 h-3.5 w-3.5" aria-hidden="true" />
+                        <Download className="h-4 w-4" aria-hidden="true" />
                         Baixar
                       </Button>
                     </li>
@@ -529,7 +536,7 @@ const isConverting = startMutation.isPending
               </div>
             )}
 
-            <div className="mt-6 flex flex-col gap-4 border-t border-gray-200 pt-5 sm:flex-row sm:items-center sm:justify-between">
+            <div className="mt-7 flex flex-col gap-4 border-t border-gray-200 pt-6 sm:flex-row sm:items-center sm:justify-between">
               <div className="flex flex-wrap items-center gap-x-2 text-[13px] text-gray-500">
                 <span className="numeric">
                   {files.length} {files.length === 1 ? 'arquivo' : 'arquivos'}

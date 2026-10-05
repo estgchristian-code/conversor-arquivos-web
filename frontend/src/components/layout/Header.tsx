@@ -29,13 +29,13 @@ export function Header({ currentPage = 'upload', onNavigate, apiStatus = 'checki
   return (
     <header className="sticky top-0 z-40 w-full border-b border-gray-200 bg-white">
       <Container>
-        <div className="flex h-16 items-center justify-between gap-4">
+        <div className="flex h-[72px] items-center justify-between gap-4">
           <div className="flex min-w-0 items-center gap-8">
-            <div className="flex shrink-0 items-center gap-2">
-              <span aria-hidden="true" className="grid h-6 w-6 place-items-center rounded bg-gray-900">
-                <span className="h-2 w-2 rounded-[2px] bg-white" />
+            <div className="flex shrink-0 items-center gap-2.5">
+              <span aria-hidden="true" className="grid h-7 w-7 place-items-center rounded-md bg-primary-600">
+                <span className="h-2.5 w-2.5 rounded-[2px] bg-white" />
               </span>
-              <span className="truncate text-[15px] font-semibold tracking-[-0.01em] text-gray-900">
+              <span className="truncate text-[16px] font-semibold tracking-[-0.01em] text-gray-900">
                 Conversor de Arquivos
               </span>
             </div>
@@ -53,8 +53,8 @@ export function Header({ currentPage = 'upload', onNavigate, apiStatus = 'checki
                     aria-label={item.label}
                     aria-current={isActive ? 'page' : undefined}
                     className={cn(
-                      'h-9 px-2.5',
-                      isActive ? 'font-semibold text-gray-900' : 'font-medium text-gray-600',
+                      'h-10 gap-2 px-3',
+                      isActive ? 'font-semibold text-primary-700' : 'font-medium text-gray-600 hover:text-gray-900',
                     )}
                   >
                     <Icon className={cn('h-4 w-4 shrink-0', isActive ? 'text-primary-600' : 'text-gray-400')} />
@@ -67,13 +67,13 @@ export function Header({ currentPage = 'upload', onNavigate, apiStatus = 'checki
 
           <div className="flex shrink-0 items-center gap-3">
             <span
-              className="hidden items-center gap-1.5 text-xs text-gray-500 sm:inline-flex"
+              className="hidden items-center gap-2 text-[13px] text-gray-500 sm:inline-flex"
               title="Status da API"
             >
-              <span className={cn('h-1.5 w-1.5 rounded-full', status.dot)} aria-hidden="true" />
+              <span className={cn('h-2 w-2 rounded-full', status.dot)} aria-hidden="true" />
               {status.label}
             </span>
-            <span className="text-xs text-gray-400">{apiStatus === 'online' ? 'v0.0.1' : ''}</span>
+            <span className="text-[13px] text-gray-400">{apiStatus === 'online' ? 'v0.0.1' : ''}</span>
           </div>
         </div>
       </Container>

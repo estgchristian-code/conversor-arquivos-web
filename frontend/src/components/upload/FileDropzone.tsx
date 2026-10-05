@@ -155,36 +155,36 @@ export function FileDropzone({
         className={cn(
           'relative flex items-center rounded-xl border-2 border-dashed transition-colors duration-150 ease-out',
           compact
-            ? 'min-h-[72px] gap-3 px-4 py-3'
-            : 'min-h-[280px] flex-col justify-center gap-3 px-6 py-12 text-center',
+            ? 'min-h-[88px] gap-3.5 px-5 py-4'
+            : 'min-h-[340px] flex-col justify-center gap-4 px-8 py-14 text-center',
           !disabled && 'cursor-pointer',
           isDragActive
             ? 'border-primary-600 bg-primary-50'
             : isDragReject
             ? 'border-red-400 bg-red-50'
-            : 'border-gray-300 bg-white hover:border-primary-400 hover:bg-primary-50/40',
+            : 'border-gray-200 bg-white hover:border-primary-400 hover:bg-primary-50/40',
           disabled && 'cursor-not-allowed opacity-60',
         )}
       >
         <input {...getInputProps()} />
 
-        <Upload className={cn('shrink-0 text-gray-400', compact ? 'h-5 w-5' : 'h-6 w-6')} />
+        <Upload className={cn('shrink-0 text-gray-400', compact ? 'h-5 w-5' : 'h-8 w-8')} />
 
         {compact ? (
-          <p className="min-w-0 flex-1 truncate text-sm text-gray-500">
+          <p className="min-w-0 flex-1 truncate text-[15px] text-gray-500">
             {formatLabel
               ? `Arraste mais arquivos ${formatLabel} aqui ou clique para adicionar`
               : 'Arraste mais arquivos aqui ou clique para adicionar'}
           </p>
         ) : (
           <>
-            <p className="text-sm font-medium text-gray-900">{dropMessage}</p>
+            <p className="text-[15px] font-semibold text-gray-900">{dropMessage}</p>
             <p className="text-[13px] leading-[18px] text-gray-500">
               {formatLabel
                 ? `Somente arquivos .${formatLabel} serão aceitos`
                 : 'Selecione o formato dos arquivos para habilitar o envio'}
             </p>
-            <p className="numeric text-xs text-gray-500">
+            <p className="numeric text-[13px] leading-[18px] text-gray-400">
               Até {maxFiles} arquivos · {formatFileSize(maxFileSize)} por arquivo
             </p>
           </>
@@ -192,14 +192,17 @@ export function FileDropzone({
       </div>
 
       {rejectedFiles.length > 0 && (
-        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3">
-          <div className="mb-2 flex items-center gap-2 text-[13px] font-medium text-red-700">
+        <div className="rounded-lg border border-red-200 bg-red-50 px-5 py-4">
+          <div className="mb-2.5 flex items-center gap-2 text-[13px] font-semibold text-red-700">
             <AlertCircle className="h-4 w-4 shrink-0" aria-hidden="true" />
             Arquivos não aceitos
           </div>
-          <ul className="max-h-40 space-y-1 overflow-y-auto">
+          <ul className="max-h-40 space-y-1.5 overflow-y-auto">
             {rejectedFiles.map(({ file, reason }, index) => (
-              <li key={index} className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-0.5 text-xs">
+              <li
+                key={index}
+                className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-0.5 text-[13px] leading-[18px]"
+              >
                 <span className="truncate font-medium text-red-700">{file.name}</span>
                 <span className="text-red-600">{reason}</span>
               </li>
@@ -220,14 +223,14 @@ interface FileListProps {
 
 function FileIcon({ extension }: { extension: string }) {
   const Icon = FILE_TYPE_ICONS[extension.toLowerCase()] || FileText
-  return <Icon className="h-4 w-4 shrink-0 text-gray-400" aria-hidden="true" />
+  return <Icon className="h-5 w-5 shrink-0 text-gray-400" aria-hidden="true" />
 }
 
 export function FileList({ files, onRemove, onRetry, uploading }: FileListProps) {
   if (files.length === 0) return null
 
   return (
-    <div className="overflow-hidden rounded-lg border border-gray-200">
+    <div className="overflow-hidden rounded-xl border border-gray-200">
       <div className="divide-y divide-gray-200">
         {files.map((fileItem) => {
           const busy = fileItem.status === 'uploading' || fileItem.status === 'converting'
@@ -238,12 +241,15 @@ export function FileList({ files, onRemove, onRetry, uploading }: FileListProps)
           const showProgress = fileItem.progress > 0 || busy
 
           return (
-            <div key={fileItem.id} className="px-4 py-3 transition-colors duration-150 hover:bg-gray-50">
+            <div
+              key={fileItem.id}
+              className="min-h-[68px] px-5 py-3.5 transition-colors duration-150 hover:bg-gray-50"
+            >
               {/* Linha principal: nome + status + ações */}
               <div className="flex items-center gap-3">
                 <FileIcon extension={fileItem.extension} />
 
-                <p className="min-w-0 flex-1 truncate text-sm font-medium text-gray-900" title={fileItem.name}>
+                <p className="min-w-0 flex-1 truncate text-[15px] font-medium text-gray-900" title={fileItem.name}>
                   {fileItem.name}
                 </p>
 
@@ -278,14 +284,14 @@ export function FileList({ files, onRemove, onRetry, uploading }: FileListProps)
               </div>
 
               {/* Linha secundária: metadados, erro e progresso */}
-              <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-2 pl-7 text-xs text-gray-500">
-                <span className="numeric font-medium uppercase text-gray-500">{fileItem.extension}</span>
+              <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-2 pl-8 text-[13px] leading-[18px] text-gray-500">
+                <span className="numeric font-semibold uppercase text-gray-400">{fileItem.extension}</span>
                 <span className="numeric">{formatFileSize(fileItem.size)}</span>
 
                 {fileItem.error && <span className="text-red-600">{fileItem.error}</span>}
 
                 {showProgress && (
-                  <div className="flex min-w-[120px] flex-1 items-center gap-2 sm:max-w-[220px]">
+                  <div className="flex min-w-[120px] flex-1 items-center gap-2.5 sm:max-w-[220px]">
                     <Progress
                       value={fileItem.progress}
                       size="sm"
