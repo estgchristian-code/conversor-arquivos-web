@@ -54,14 +54,6 @@ export function useDownloadFile() {
   })
 }
 
-export function useSupportedFormats() {
-  return useQuery({
-    queryKey: ['formats'],
-    queryFn: () => api.getSupportedFormats(),
-    staleTime: 1000 * 60 * 30,
-  })
-}
-
 export function useHealthCheck() {
   return useQuery({
     queryKey: ['health'],

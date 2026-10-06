@@ -70,11 +70,6 @@ class ApiClient {
     return response.data
   }
 
-  async getSupportedFormats(): Promise<Record<string, string[]>> {
-    const response = await this.client.get<ApiResponse<Record<string, string[]>>>('/formats')
-    return response.data.data
-  }
-
   async healthCheck(): Promise<{ status: string; timestamp: string }> {
     const response = await this.client.get<ApiResponse<{ status: string; timestamp: string }>>('/health')
     return response.data.data
