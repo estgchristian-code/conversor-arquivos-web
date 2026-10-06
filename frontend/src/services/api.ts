@@ -63,10 +63,6 @@ class ApiClient {
     return response.data.data
   }
 
-  async cancelConversion(jobId: string): Promise<void> {
-    await this.client.delete(`/conversion/${jobId}`)
-  }
-
   async downloadFile(jobId: string, fileId: string): Promise<Blob> {
     const response = await this.client.get(`/conversion/${jobId}/download/${fileId}`, {
       responseType: 'blob',

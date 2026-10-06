@@ -1,4 +1,5 @@
 import { fileURLToPath } from 'node:url'
+import fs from 'node:fs'
 import Fastify, { type FastifyBaseLogger, type FastifyInstance } from 'fastify'
 import cors from '@fastify/cors'
 import multipart from '@fastify/multipart'
@@ -43,6 +44,18 @@ export async function buildApp(): Promise<FastifyInstance> {
     decorateReply: false,
   })
 
+  const frontendBuildDir = config.frontend.buildDir
+
+  const hasFrontendBuild = fs.existsSync(frontendBuildDir)
+
+  if (hasFrontendBuild) {
+    await app.register(fastifyStatic, {
+      root: frontendBuildDir,
+      prefix: '/',
+      index: ['index.html'],
+    })
+  }
+
   app.setErrorHandler((error, request, reply) => {
     const statusCode = error.statusCode ?? 500
 
@@ -58,6 +71,20 @@ export async function buildApp(): Promise<FastifyInstance> {
   })
 
   app.setNotFoundHandler((request, reply) => {
+    const url = new URL(request.url, 'http://localhost').pathname
+
+    if (url.startsWith('/api/')) {
+      return reply.code(404).send({
+        success: false,
+        data: null,
+        message: `Rota nao encontrada: ${request.method} ${request.url}`,
+      })
+    }
+
+    if (hasFrontendBuild) {
+      return reply.sendFile('index.html')
+    }
+
     return reply.code(404).send({
       success: false,
       data: null,

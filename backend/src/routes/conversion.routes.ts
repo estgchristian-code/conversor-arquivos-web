@@ -70,5 +70,4 @@ export const conversionRoutes: FastifyPluginAsync = async (app) => {
   })
 
   app.get('/conversion', notImplementedHandler('conversion.list'))
-  app.delete('/conversion/:jobId', notImplementedHandler('conversion.cancel'))
 }

@@ -3,18 +3,13 @@ import { useQueryClient } from '@tanstack/react-query'
 import { Header } from './components/layout/Header'
 import { Container } from './components/layout/Container'
 import { BatchManager } from './components/upload/BatchManager'
-import {
-  useConversions,
-  useHealthCheck,
-  useCancelConversion,
-  useDownloadFile,
-} from './hooks/useConversions'
+import { useConversions, useHealthCheck, useDownloadFile } from './hooks/useConversions'
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from './components/ui/Card'
 import { Badge } from './components/ui/Badge'
 import { Progress } from './components/ui/Progress'
 import { Button } from './components/ui/Button'
 import { formatFileSize } from './utils/helpers'
-import { Loader2, Clock, Download, X, AlertCircle, RotateCcw, CheckCircle2 } from 'lucide-react'
+import { Loader2, Clock, Download, AlertCircle, RotateCcw, CheckCircle2 } from 'lucide-react'
 import type { ConversionJob } from './types'
 
 const HISTORY_PAGE_SIZE = 20
@@ -53,7 +48,6 @@ function HistoryPage() {
   const [page, setPage] = useState(1)
   const [actionMessage, setActionMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
   const { data: conversions, isLoading, isFetching, isError, error, refetch } = useConversions(page, HISTORY_PAGE_SIZE)
-  const { mutate: cancelConversion, isPending: isCancelling } = useCancelConversion()
   const { mutate: downloadFile, isPending: isDownloading } = useDownloadFile()
 
   const handleDownload = (jobId: string, fileId: string, fileName: string) => {
@@ -82,25 +76,6 @@ function HistoryPage() {
         },
       },
     )
-  }
-
-  const handleCancel = (jobId: string) => {
-    setActionMessage(null)
-    cancelConversion(jobId, {
-      onSuccess: () => {
-        setActionMessage({ type: 'success', text: `Conversão ${jobId.slice(0, 8)} cancelada.` })
-        void refetch()
-      },
-      onError: (cancelError) => {
-        setActionMessage({
-          type: 'error',
-          text:
-            getErrorStatus(cancelError) === 501
-              ? 'O cancelamento ainda não está disponível (501 Not Implemented). Nada foi cancelado.'
-              : `Falha ao cancelar: ${cancelError.message}`,
-        })
-      },
-    })
   }
 
   if (isLoading) {
@@ -264,18 +239,6 @@ function HistoryPage() {
                               </Button>
                             ))
                           ) : null)}
-                        {(job.status === 'queued' || job.status === 'processing') && (
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => handleCancel(job.id)}
-                            disabled={isCancelling}
-                            aria-label="Cancelar conversão"
-                            title="Cancelar conversão"
-                          >
-                            <X className="h-4 w-4 text-red-600" />
-                          </Button>
-                        )}
                       </div>
                     </td>
                   </tr>

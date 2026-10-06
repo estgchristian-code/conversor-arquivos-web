@@ -48,18 +48,6 @@ export function useStartConversion() {
   })
 }
 
-export function useCancelConversion() {
-  const queryClient = useQueryClient()
-
-  return useMutation({
-    mutationFn: (jobId: string) => api.cancelConversion(jobId),
-    onSuccess: (_, jobId) => {
-      queryClient.invalidateQueries({ queryKey: ['conversions'] })
-      queryClient.invalidateQueries({ queryKey: ['conversion', jobId] })
-    },
-  })
-}
-
 export function useDownloadFile() {
   return useMutation({
     mutationFn: ({ jobId, fileId }: { jobId: string; fileId: string }) => api.downloadFile(jobId, fileId),

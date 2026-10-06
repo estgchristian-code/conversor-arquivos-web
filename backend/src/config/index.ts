@@ -1,3 +1,5 @@
+import path from 'node:path'
+
 export const config = {
   port: parseInt(process.env.PORT || '4000', 10),
   host: process.env.HOST || '0.0.0.0',
@@ -44,8 +46,16 @@ export const config = {
     },
   },
 
+  frontend: {
+    buildDir: path.resolve(process.cwd(), process.env.FRONTEND_BUILD_DIR || '../frontend/dist'),
+  },
+
   cors: {
-    origin: process.env.CORS_ORIGIN?.split(',') || ['http://localhost:3000'],
+    origin: process.env.CORS_ORIGIN
+      ? process.env.CORS_ORIGIN.split(',')
+      : process.env.NODE_ENV === 'development'
+        ? ['http://localhost:3000']
+        : 'same-origin',
     credentials: true,
   },
 
