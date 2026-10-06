@@ -11,25 +11,6 @@ export const config = {
     tempDir: process.env.UPLOAD_TEMP_DIR || '/tmp/uploads',
   },
 
-  redis: {
-    host: process.env.REDIS_HOST || 'localhost',
-    port: parseInt(process.env.REDIS_PORT || '6379', 10),
-    password: process.env.REDIS_PASSWORD || undefined,
-    db: parseInt(process.env.REDIS_DB || '0', 10),
-  },
-
-  queue: {
-    defaultJobOptions: {
-      attempts: 3,
-      backoff: {
-        type: 'exponential',
-        delay: 60000,
-      },
-      removeOnComplete: 100,
-      removeOnFail: 50,
-    },
-  },
-
   storage: {
     type: (process.env.STORAGE_TYPE as 'local' | 's3') || 'local',
     local: {
