@@ -12,18 +12,9 @@ export const config = {
   },
 
   storage: {
-    type: (process.env.STORAGE_TYPE as 'local' | 's3') || 'local',
     local: {
       uploadDir: process.env.STORAGE_LOCAL_DIR || './storage/uploads',
       outputDir: process.env.STORAGE_OUTPUT_DIR || './storage/outputs',
-    },
-    s3: {
-      endpoint: process.env.S3_ENDPOINT,
-      region: process.env.S3_REGION || 'us-east-1',
-      bucket: process.env.S3_BUCKET,
-      accessKeyId: process.env.S3_ACCESS_KEY,
-      secretAccessKey: process.env.S3_SECRET_KEY,
-      forcePathStyle: process.env.S3_FORCE_PATH_STYLE === 'true',
     },
   },
 

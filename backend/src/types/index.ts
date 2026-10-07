@@ -1,4 +1,4 @@
-export type JobStatus = 'queued' | 'processing' | 'completed' | 'failed' | 'partial' | 'cancelled'
+export type JobStatus = 'queued' | 'processing' | 'completed' | 'failed' | 'partial'
 
 export interface UploadedFileRecord {
   id: string
@@ -37,7 +37,6 @@ export interface UploadResponse {
 
 export interface ConversionJobRecord {
   id: string
-  batchId?: string
   fileIds: string[]
   outputFormat: string
   status: JobStatus

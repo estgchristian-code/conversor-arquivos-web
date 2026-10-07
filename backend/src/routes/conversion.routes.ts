@@ -8,7 +8,6 @@ import {
 } from '../services/conversion.service.js'
 import { createChildLogger } from '../utils/logger.js'
 import type { ApiResponse, ConversionJobRecord, StartConversionRequest } from '../types/index.js'
-import { notImplementedHandler } from './utils.js'
 
 const conversionLogger = createChildLogger({ module: 'routes.conversion' })
 
@@ -68,6 +67,4 @@ export const conversionRoutes: FastifyPluginAsync = async (app) => {
       )
       .send(createReadStream(absolutePath))
   })
-
-  app.get('/conversion', notImplementedHandler('conversion.list'))
 }
