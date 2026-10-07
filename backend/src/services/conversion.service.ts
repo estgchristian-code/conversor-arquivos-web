@@ -171,7 +171,7 @@ async function convertImage(
   const destination = buildOutputPath(jobId, source.id, outputFormat)
   await mkdir(path.dirname(destination), { recursive: true })
 
-  const baseName = path.parse(sanitizeFileName(source.originalName)).name || 'arquivo'
+  const baseName = path.parse(source.originalName).name || 'arquivo'
   const outputName = `${baseName}.${outputFormat}`
   const startedAt = Date.now()
 

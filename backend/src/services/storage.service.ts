@@ -36,7 +36,7 @@ export function sanitizeFileName(name: string): string {
     .trim()
     .replace(/[. ]+$/, '')
 
-  return base.replace(/[^\p{L}\p{N}\p{M}._-]+/gu, '_') || 'arquivo'
+  return base.replace(/[^\p{L}\p{N}\p{M}._ -]+/gu, '_') || 'arquivo'
 }
 
 export function buildUploadPath(fileId: string, originalName: string): string {
