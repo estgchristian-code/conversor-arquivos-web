@@ -73,10 +73,6 @@ export interface PaginatedResult<T> {
 
 export interface ConversionOptions {
   quality?: number
-  resolution?: string
-  bitrate?: string
-  codec?: string
-  preset?: string
   [key: string]: unknown
 }
 
@@ -84,7 +80,6 @@ export interface StartConversionRequest {
   fileIds: string[]
   outputFormat: string
   options?: ConversionOptions
-  batchName?: string
 }
 
 export interface ApiResponse<T> {

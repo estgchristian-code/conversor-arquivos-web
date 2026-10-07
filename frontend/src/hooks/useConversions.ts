@@ -1,7 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '../services/api'
-import type { FileItem, StartConversionRequest } from '../types'
-import { generateId, getFileExtension, getMimeTypeFromExtension } from '../utils/helpers'
+import type { StartConversionRequest } from '../types'
 
 export interface UploadVariables {
   files: File[]
@@ -27,12 +26,7 @@ export function useConversion(jobId: string | null, enabled = true) {
     queryKey: ['conversion', jobId],
     queryFn: () => api.getConversion(jobId!),
     enabled: !!jobId && enabled,
-    refetchInterval: (query) => {
-      if (!query.state.data) return 2000
-      const status = query.state.data.status
-      if (status === 'queued' || status === 'processing') return 2000
-      return false
-    },
+    refetchInterval: false,
   })
 }
 
@@ -61,17 +55,4 @@ export function useHealthCheck() {
     refetchInterval: 30000,
     retry: 3,
   })
-}
-
-export function createFileItems(files: FileList): FileItem[] {
-  return Array.from(files).map((file) => ({
-    id: generateId(),
-    file,
-    name: file.name,
-    size: file.size,
-    type: file.type || getMimeTypeFromExtension(getFileExtension(file.name)),
-    extension: getFileExtension(file.name),
-    status: 'pending' as const,
-    progress: 0,
-  }))
 }
