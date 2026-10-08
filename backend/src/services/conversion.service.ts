@@ -12,6 +12,7 @@ import type {
   ConversionJobRecord,
   ConversionOptions,
   ConversionResultRecord,
+  PaginatedResult,
   StartConversionRequest,
   UploadedFileRecord,
 } from '../types/index.js'
@@ -136,6 +137,10 @@ export async function getConversion(jobId: string): Promise<ConversionJobRecord>
   }
 
   return job
+}
+
+export async function getConversions(page = 1, limit = 20): Promise<PaginatedResult<ConversionJobRecord>> {
+  return conversionRepository.findAll(page, limit)
 }
 
 export async function getConversionOutput(jobId: string, fileId: string): Promise<ConversionOutputFile> {
