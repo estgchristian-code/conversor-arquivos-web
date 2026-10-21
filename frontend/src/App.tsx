@@ -88,7 +88,7 @@ function UploadPage({ onStartConversion }: { onStartConversion?: () => void }) {
       <PageHeader
         eyebrow="Conversão"
         title="Conversão em lote"
-        description="Envie vários arquivos de uma vez; os formatos de entrada são identificados automaticamente e a conversão começa ao escolher a saída."
+        description="Adicione os arquivos, escolha o formato de saída e converta."
       />
       <BatchManager onStartConversion={onStartConversion} />
     </div>

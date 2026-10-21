@@ -1,22 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import {
-  CheckCircle2,
-  Download,
-  FileImage,
-  Files,
-  HardDrive,
-  Layers,
-  Loader2,
-  Lock,
-  Trash2,
-} from 'lucide-react'
+import { Download, Loader2, Trash2 } from 'lucide-react'
 import { formatFileSize, sanitizeFileName } from '../../utils/helpers'
 import { useConversion, useDownloadFile, useStartConversion, useUpload } from '../../hooks/useConversions'
 import { Button } from '../ui/Button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/Card'
 import { Select } from '../ui/Select'
-import { Progress } from '../ui/Progress'
-import { Badge } from '../ui/Badge'
 import { Alert } from '../ui/Alert'
 import { FileDropzone, FileList } from './FileDropzone'
 import type { ConversionJob, ConversionResult, FileItem, RejectedFile } from '../../types'
@@ -95,37 +82,10 @@ function getOutputOptions(files: FileItem[]): Array<{ value: string; label: stri
 
 const MAX_FILES = 50
 
-const STEPS = [
-  'Adicione os arquivos; o formato de cada um é identificado pela extensão.',
-  'Selecione o formato de saída para iniciar a conversão automaticamente.',
-  'Acompanhe o progresso e baixe os resultados.',
-]
-
-function SummaryRow({
-  icon: Icon,
-  label,
-  value,
-}: {
-  icon: typeof Files
-  label: string
-  value: string
-}) {
-  return (
-    <div className="flex items-center justify-between gap-3 text-[12px]">
-      <dt className="flex items-center gap-2 text-gray-500">
-        <Icon className="h-3.5 w-3.5 text-gray-400" aria-hidden="true" />
-        {label}
-      </dt>
-      <dd className="numeric truncate font-medium text-gray-900">{value}</dd>
-    </div>
-  )
-}
-
 export function BatchManager({ onStartConversion }: { onStartConversion?: (files: FileItem[], outputFormat: string) => void }) {
   const [files, setFiles] = useState<FileItem[]>([])
   const [outputFormat, setOutputFormat] = useState<string>('')
   const [isUploading, setIsUploading] = useState(false)
-  const [uploadProgress, setUploadProgress] = useState(0)
   const [notice, setNotice] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
   const [conversionId, setConversionId] = useState<string | null>(null)
   const [conversionJob, setConversionJob] = useState<ConversionJob | null>(null)
@@ -197,7 +157,6 @@ export function BatchManager({ onStartConversion }: { onStartConversion?: (files
   }
 
   const runUpload = async (targets: FileItem[], ids: Set<string>) => {
-    setUploadProgress(0)
     setFiles((prev) =>
       prev.map((item) =>
         ids.has(item.id) ? { ...item, status: 'uploading', progress: 0, error: undefined } : item,
@@ -207,18 +166,9 @@ export function BatchManager({ onStartConversion }: { onStartConversion?: (files
     try {
       const result = await uploadMutation.mutateAsync({
         files: targets.map((item) => item.file),
-        onProgress: (percent) => {
-          setUploadProgress(percent)
-          setFiles((prev) =>
-            prev.map((item) =>
-              ids.has(item.id) ? { ...item, progress: percent } : item,
-            ),
-          )
-        },
       })
 
       applyServerResult(targets, result)
-      setUploadProgress(100)
 
       if (result.rejected.length > 0) {
         setNotice({
@@ -227,8 +177,6 @@ export function BatchManager({ onStartConversion }: { onStartConversion?: (files
             .map((entry) => `${entry.name} (${entry.reason})`)
             .join('; ')}`,
         })
-      } else {
-        setNotice({ type: 'success', text: `${result.files.length} arquivo(s) enviado(s) com sucesso.` })
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Falha no envio dos arquivos'
@@ -321,18 +269,10 @@ export function BatchManager({ onStartConversion }: { onStartConversion?: (files
 
   const handleClearAll = () => {
     setFiles([])
-    setUploadProgress(0)
     setNotice(null)
     setConversionId(null)
     setConversionJob(null)
     setOutputFormat('')
-    autoConvertedIdsRef.current.clear()
-  }
-
-  const handleClearResults = () => {
-    setConversionId(null)
-    setConversionJob(null)
-    setNotice(null)
     autoConvertedIdsRef.current.clear()
   }
 
@@ -408,13 +348,12 @@ export function BatchManager({ onStartConversion }: { onStartConversion?: (files
           )
 
           const failed = targets.length - results.length
-          setNotice({
-            type: failed > 0 ? 'error' : 'success',
-            text:
-              failed > 0
-                ? `${results.length} de ${targets.length} arquivo(s) convertido(s). ${job.error ?? ''}`.trim()
-                : `${results.length} arquivo(s) convertido(s) para .${job.outputFormat}.`,
-          })
+          if (failed > 0) {
+            setNotice({
+              type: 'error',
+              text: `${results.length} de ${targets.length} arquivo(s) convertido(s). ${job.error ?? ''}`.trim(),
+            })
+          }
         },
         onError: (error) => {
           setConversionId(null)
@@ -441,37 +380,49 @@ export function BatchManager({ onStartConversion }: { onStartConversion?: (files
   const results = activeJob?.results ?? []
 
   const hasNoOutputOptions = files.length > 0 && outputOptions.length === 0
+  const convertibleFiles = files.filter((file) => file.serverId && file.status === 'uploaded')
+  const canConvert =
+    results.length === 0 &&
+    Boolean(outputFormat) &&
+    !isUploading &&
+    !isConverting &&
+    convertibleFiles.length > 0 &&
+    outputOptions.some((option) => option.value === outputFormat)
 
-  const batchStatus = isUploading
-    ? { label: 'Enviando', variant: 'info' as const }
-    : isConverting
-      ? { label: 'Convertendo', variant: 'info' as const }
-      : results.length > 0
-        ? { label: 'Concluído', variant: 'success' as const }
-        : errorCount > 0
-          ? { label: 'Com erros', variant: 'error' as const }
-          : { label: 'Pronto', variant: 'secondary' as const }
+  let convertDisabledReason = ''
+  if (isUploading) {
+    convertDisabledReason = 'Aguarde o envio dos arquivos.'
+  } else if (outputOptions.length === 0) {
+    convertDisabledReason = 'Nenhum formato de saída compatível com o lote.'
+  } else if (!outputFormat) {
+    convertDisabledReason = 'Escolha o formato de saída.'
+  } else if (convertibleFiles.length === 0) {
+    convertDisabledReason =
+      errorCount > 0 ? 'Nenhum arquivo válido para converter.' : 'Aguarde o envio dos arquivos.'
+  }
 
   return (
-    <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px] lg:items-start">
-      <div className="min-w-0 space-y-6">
-        <Card>
-          <CardHeader>
-            <div className="flex items-start gap-3">
-              <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-primary-50 text-primary-600 ring-1 ring-inset ring-primary-100">
-                <Layers className="h-4 w-4" aria-hidden="true" />
-              </span>
-              <div>
-                <CardTitle>Arquivos e envio</CardTitle>
-                <CardDescription>
-                  Adicione os arquivos; o formato de cada um é identificado pela extensão.
-                </CardDescription>
-              </div>
-            </div>
-          </CardHeader>
-          <CardContent className="space-y-5">
-            {files.length > 0 && (
-              <div className="max-w-sm">
+    <div className="rounded-xl border border-gray-200 bg-white p-4 sm:p-5">
+      {results.length === 0 ? (
+        <>
+          <FileDropzone
+            onFilesAdd={handleFilesAdd}
+            accept={ACCEPTED_INPUT_FILES}
+            disabled={isUploading || isConverting || files.length >= MAX_FILES}
+            maxFiles={Math.max(1, MAX_FILES - files.length)}
+            compact={files.length > 0}
+          />
+
+          {files.length > 0 && (
+            <div className="mt-4 space-y-4">
+              <FileList
+                files={files}
+                onRemove={handleRemove}
+                onRetry={handleRetry}
+                uploading={isUploading}
+              />
+
+              <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
                 <Select
                   id="output-format"
                   label="Converter para"
@@ -480,289 +431,99 @@ export function BatchManager({ onStartConversion }: { onStartConversion?: (files
                   options={outputOptions}
                   placeholder={outputOptions.length > 0 ? 'Selecione' : 'Nenhum formato disponível'}
                   disabled={outputOptions.length === 0}
-                  hint={
-                    outputOptions.length > 0
-                      ? 'A conversão inicia após a escolha.'
-                      : 'Remova arquivos de um formato para liberar uma saída.'
-                  }
                   className="w-full"
                 />
-              </div>
-            )}
-
-            {hasNoOutputOptions && (
-              <Alert variant="warning" title="Nenhum formato de saída compatível">
-                <p>
-                  Não há formato de saída compatível com todos os arquivos do lote. Remova os
-                  arquivos de pelo menos um dos formatos de entrada na lista abaixo para liberar
-                  uma conversão sem redundância.
-                </p>
-                {detectedInputFormats.length > 0 && (
-                  <p className="mt-1.5">
-                    Formatos detectados: {detectedInputFormats.map(toLabel).join(', ')}.
-                  </p>
-                )}
-              </Alert>
-            )}
-
-            {files.length === 0 && (
-              <div className="flex items-start gap-2.5 rounded-lg border border-dashed border-gray-200 bg-gray-50/70 px-3.5 py-2.5">
-                <Lock className="mt-0.5 h-3.5 w-3.5 shrink-0 text-gray-400" aria-hidden="true" />
-                <p className="text-[12px] leading-4 text-gray-500">
-                  O formato de saída aparece depois que você adicionar arquivos.
-                </p>
-              </div>
-            )}
-
-            {results.length === 0 && (
-              <div className="border-t border-gray-100 pt-5">
-                <FileDropzone
-                  onFilesAdd={handleFilesAdd}
-                  accept={ACCEPTED_INPUT_FILES}
-                  disabled={isUploading || isConverting || files.length >= MAX_FILES}
-                  maxFiles={Math.max(1, MAX_FILES - files.length)}
-                  compact={files.length > 0}
-                />
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        {notice && <Alert variant={notice.type}>{notice.text}</Alert>}
-
-        {files.length > 0 && (
-          <Card>
-            <CardHeader className="flex-row flex-wrap items-center justify-between gap-3">
-              <div>
-                <CardTitle>Arquivos do lote</CardTitle>
-                <CardDescription>
-                  <span className="numeric">{files.length}</span>{' '}
-                  {files.length === 1 ? 'arquivo' : 'arquivos'} ·{' '}
-                  <span className="numeric">{formatFileSize(totalSize)}</span>
-                  {errorCount > 0 && (
-                    <>
-                      {' '}
-                      · <span className="font-medium text-red-600">{errorCount} com erro</span>
-                    </>
-                  )}
-                </CardDescription>
-              </div>
-              <Badge variant={batchStatus.variant} dot>
-                {batchStatus.label}
-              </Badge>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {isUploading && (
-                <div className="rounded-lg border border-gray-200 bg-gray-50/80 px-4 py-3">
-                  <div className="flex items-center justify-between gap-3 text-[12px]">
-                    <span className="flex items-center gap-2 font-medium text-gray-700">
-                      <Loader2 className="h-4 w-4 animate-spin text-primary-600" aria-hidden="true" />
-                      Enviando arquivos...
-                    </span>
-                    <span className="numeric text-gray-500">{uploadProgress}%</span>
-                  </div>
-                  <Progress value={uploadProgress} size="sm" className="mt-2" />
-                </div>
-              )}
-
-              {isConverting && (
-                <div className="flex items-center gap-3 rounded-lg border border-primary-100 bg-primary-50/60 px-4 py-3 text-[13px] text-primary-800">
-                  <Loader2 className="h-4 w-4 shrink-0 animate-spin text-primary-600" aria-hidden="true" />
-                  <span>Convertendo arquivos no servidor...</span>
-                </div>
-              )}
-
-              {results.length === 0 && (
-                <FileList
-                  files={files}
-                  onRemove={handleRemove}
-                  onRetry={handleRetry}
-                  uploading={isUploading}
-                />
-              )}
-
-              {results.length > 0 && (
-                <div className="overflow-hidden rounded-xl border border-green-200">
-                  <div className="flex flex-wrap items-center justify-between gap-3 border-b border-green-200 bg-green-50/80 px-4 py-3">
-                    <div className="flex items-center gap-3">
-                      <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-green-100 text-green-700">
-                        <CheckCircle2 className="h-4 w-4" aria-hidden="true" />
-                      </span>
-                      <div>
-                        <p className="text-[13px] font-semibold text-green-900">
-                          {results.length} {results.length === 1 ? 'arquivo convertido' : 'arquivos convertidos'}
-                        </p>
-                        <p className="text-[11px] text-green-700">
-                          Formato de saída: .{(activeJob?.outputFormat ?? outputFormat).toUpperCase()}
-                        </p>
-                      </div>
-                    </div>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={handleClearResults}
-                      disabled={isConverting || isUploading}
-                    >
-                      Limpar resultados
-                    </Button>
-                  </div>
-                  <ul className="divide-y divide-green-100">
-                    {results.map((result) => (
-                      <li
-                        key={result.fileId}
-                        className="flex flex-wrap items-center gap-3 px-4 py-3.5 transition-colors duration-150 hover:bg-green-50/50 sm:flex-nowrap"
-                      >
-                        <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-green-50 text-green-600">
-                          <FileImage className="h-4 w-4" aria-hidden="true" />
-                        </span>
-                        <div className="min-w-0 flex-1">
-                          <p className="truncate text-[13px] font-medium text-gray-900" title={result.originalName}>
-                            {result.originalName}
-                          </p>
-                          <p className="numeric mt-0.5 truncate text-[11px] text-gray-500" title={result.outputName}>
-                            {result.outputName}
-                          </p>
-                        </div>
-                        <span className="numeric shrink-0 text-[12px] text-gray-500">
-                          {formatFileSize(result.outputSize)}
-                        </span>
-                        <Button
-                          variant="primary"
-                          size="sm"
-                          className="shrink-0"
-                          disabled={downloadMutation.isPending || isConverting}
-                          onClick={() => handleDownload(result)}
-                          aria-label={`Baixar ${result.outputName}`}
-                          title={`Baixar ${result.outputName}`}
-                        >
-                          <Download className="h-3.5 w-3.5" aria-hidden="true" />
-                          Baixar
-                        </Button>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-
-              <div className="flex flex-col gap-3 border-t border-gray-100 pt-4 sm:flex-row sm:items-center sm:justify-between">
-                <div className="flex flex-wrap items-center gap-x-2 text-[12px] text-gray-500">
-                  <span className="numeric">
-                    {files.length} {files.length === 1 ? 'arquivo' : 'arquivos'}
-                  </span>
-                  <span aria-hidden="true" className="text-gray-300">
-                    ·
-                  </span>
-                  <span className="numeric">{formatFileSize(totalSize)}</span>
-                  {errorCount > 0 && (
-                    <>
-                      <span aria-hidden="true" className="text-gray-300">
-                        ·
-                      </span>
-                      <span className="numeric font-medium text-red-600">{errorCount} com erro</span>
-                    </>
-                  )}
-                </div>
-
                 <Button
-                  variant="outline"
-                  onClick={handleClearAll}
-                  disabled={isUploading || isConverting || files.length === 0}
+                  variant="primary"
+                  onClick={() => handleStart()}
+                  disabled={!canConvert}
                   className="w-full sm:w-auto"
                 >
-                  <Trash2 className="h-4 w-4" aria-hidden="true" />
-                  Limpar tudo
+                  {isConverting && <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />}
+                  {isConverting ? 'Convertendo...' : 'Converter arquivos'}
                 </Button>
               </div>
-            </CardContent>
-          </Card>
-        )}
-      </div>
 
-      <aside className="space-y-5" aria-label="Resumo do lote">
-        <Card>
-          <CardHeader className="pb-3">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <CardTitle>Resumo do lote</CardTitle>
-                <CardDescription>Atualizado conforme você adiciona arquivos.</CardDescription>
-              </div>
-              <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-gray-100 text-gray-500 ring-1 ring-inset ring-gray-200">
-                <Files className="h-4 w-4" aria-hidden="true" />
-              </span>
+              {hasNoOutputOptions && (
+                <p className="text-[12px] leading-5 text-amber-700">
+                  Nenhum formato de saída compatível com todos os arquivos do lote
+                  {detectedInputFormats.length > 0
+                    ? ` (${detectedInputFormats.map(toLabel).join(', ')}).`
+                    : '.'}
+                </p>
+              )}
+
+              {!canConvert && !isConverting && convertDisabledReason && !hasNoOutputOptions && (
+                <p className="text-[12px] leading-5 text-gray-500">{convertDisabledReason}</p>
+              )}
             </div>
-          </CardHeader>
-          <CardContent>
-            <dl className="space-y-2.5">
-              <SummaryRow icon={Files} label="Arquivos" value={`${files.length} de ${MAX_FILES}`} />
-              <SummaryRow icon={HardDrive} label="Tamanho total" value={formatFileSize(totalSize)} />
-              <SummaryRow
-                icon={Layers}
-                label="Entrada"
-                value={detectedInputFormats.length > 0 ? detectedInputFormats.map(toLabel).join(', ') : '—'}
-              />
-              <SummaryRow icon={Layers} label="Saída" value={outputFormat ? toLabel(outputFormat) : '—'} />
-            </dl>
+          )}
+        </>
+      ) : (
+        <div className="space-y-3">
+          <div>
+            <p className="text-[14px] font-semibold text-gray-900">Resultados</p>
+            <p className="text-[12px] text-gray-500">
+              {results.length} {results.length === 1 ? 'arquivo convertido' : 'arquivos convertidos'} para .
+              {(activeJob?.outputFormat ?? outputFormat).toUpperCase()}
+            </p>
+          </div>
 
-            <div className="mt-4 border-t border-gray-100 pt-4">
-              <div className="mb-1.5 flex items-center justify-between text-[11px] text-gray-500">
-                <span>Capacidade do lote</span>
-                <span className="numeric">
-                  {files.length}/{MAX_FILES}
+          <ul className="divide-y divide-gray-100 border-t border-gray-100">
+            {results.map((result) => (
+              <li key={result.fileId} className="flex flex-wrap items-center gap-3 py-2.5 sm:flex-nowrap">
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-[13px] font-medium text-gray-900" title={result.originalName}>
+                    {result.originalName}
+                  </p>
+                  <p className="numeric mt-0.5 truncate text-[11px] text-gray-500" title={result.outputName}>
+                    {result.outputName}
+                  </p>
+                </div>
+                <span className="numeric shrink-0 text-[11px] text-gray-500">
+                  {formatFileSize(result.outputSize)}
                 </span>
-              </div>
-              <Progress value={files.length} max={MAX_FILES} size="sm" />
-            </div>
+                <Button
+                  variant="primary"
+                  size="sm"
+                  className="shrink-0"
+                  disabled={downloadMutation.isPending || isConverting}
+                  onClick={() => handleDownload(result)}
+                  aria-label={`Baixar ${result.outputName}`}
+                  title={`Baixar ${result.outputName}`}
+                >
+                  <Download className="h-3.5 w-3.5" aria-hidden="true" />
+                  Baixar
+                </Button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
-            {errorCount > 0 && (
-              <p className="mt-3 text-[12px] font-medium text-red-600">
-                {errorCount === 1 ? '1 arquivo com erro no lote.' : `${errorCount} arquivos com erro no lote.`}
-              </p>
-            )}
-          </CardContent>
-        </Card>
+      {notice && (
+        <Alert variant={notice.type} className="mt-4">
+          {notice.text}
+        </Alert>
+      )}
 
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle>Como funciona</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <ol className="space-y-3">
-              {STEPS.map((step, index) => (
-                <li key={step} className="flex gap-3">
-                  <span className="numeric mt-0.5 grid h-5 w-5 shrink-0 place-items-center rounded-full border border-gray-200 bg-gray-50 text-[10px] font-semibold text-gray-500">
-                    {index + 1}
-                  </span>
-                  <p className="text-[12px] leading-5 text-gray-500">{step}</p>
-                </li>
-              ))}
-            </ol>
-            <p className="mt-4 rounded-lg border border-primary-100 bg-primary-50/60 px-3 py-2.5 text-[11px] leading-4 text-primary-800">
-              A conversão começa automaticamente quando o formato de saída é escolhido.
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle>Formatos suportados</CardTitle>
-            <CardDescription>Conversões disponíveis nesta versão.</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <p className="text-[10px] font-semibold uppercase tracking-[0.1em] text-gray-400">Saída</p>
-            <div className="mt-2 flex flex-wrap gap-1.5">
-              {OUTPUT_FORMATS.map((format) => (
-                <Badge key={format} variant="secondary">
-                  {toLabel(format)}
-                </Badge>
-              ))}
-            </div>
-            <p className="mt-4 text-[10px] font-semibold uppercase tracking-[0.1em] text-gray-400">Entrada</p>
-            <p className="mt-1.5 text-[12px] leading-5 text-gray-500">
-              JPG/JPEG, PNG, WEBP, AVIF, GIF, SVG, TIFF/TIF e BMP.
-            </p>
-          </CardContent>
-        </Card>
-      </aside>
+      {files.length > 0 && (
+        <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-gray-100 pt-3">
+          <p className="text-[11px] text-gray-500">
+            {files.length} {files.length === 1 ? 'arquivo' : 'arquivos'} · {formatFileSize(totalSize)}
+            {errorCount > 0 && <span className="text-red-600"> · {errorCount} com erro</span>}
+          </p>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={handleClearAll}
+            disabled={isUploading || isConverting || files.length === 0}
+          >
+            <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
+            Limpar tudo
+          </Button>
+        </div>
+      )}
     </div>
   )
 }
