@@ -1,45 +1,21 @@
+/**
+ * Extensoes de entrada com conversor real.
+ * Esta lista e compartilhada entre o upload e o servico de conversao para
+ * evitar que o upload aceite formatos que a conversao nao consegue processar.
+ */
 export const SUPPORTED_EXTENSIONS: ReadonlySet<string> = new Set([
-  'pdf',
-  'doc',
-  'docx',
-  'xls',
-  'xlsx',
-  'ppt',
-  'pptx',
-  'txt',
-  'md',
-  'rtf',
-  'odt',
-  'ods',
-  'odp',
   'jpg',
   'jpeg',
+  'jpe',
+  'jfif',
   'png',
   'webp',
   'avif',
   'gif',
   'svg',
   'tiff',
+  'tif',
   'bmp',
-  'heic',
-  'mp3',
-  'wav',
-  'flac',
-  'ogg',
-  'aac',
-  'm4a',
-  'opus',
-  'mp4',
-  'webm',
-  'mov',
-  'avi',
-  'mkv',
-  'flv',
-  'zip',
-  'tar',
-  'gz',
-  'rar',
-  '7z',
 ])
 
 export const ALLOWED_UPLOAD_FIELDS: ReadonlySet<string> = new Set(['files', 'file'])

@@ -35,9 +35,17 @@ export interface UploadResponse {
   rejected: RejectedFile[]
 }
 
+export interface ConversionInputFileRecord {
+  id: string
+  originalName: string
+  size: number
+  mimeType: string
+}
+
 export interface ConversionJobRecord {
   id: string
   fileIds: string[]
+  inputFiles: ConversionInputFileRecord[]
   outputFormat: string
   status: JobStatus
   progress: number

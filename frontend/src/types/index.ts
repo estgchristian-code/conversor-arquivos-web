@@ -15,10 +15,17 @@ export interface FileItem {
   conversionId?: string
 }
 
+export interface ConversionInputFile {
+  id: string
+  originalName: string
+  size: number
+  mimeType: string
+}
+
 export interface ConversionJob {
   id: string
-  batchId?: string
-  inputFiles: FileItem[]
+  fileIds: string[]
+  inputFiles: ConversionInputFile[]
   outputFormat: string
   status: 'queued' | 'processing' | 'completed' | 'failed' | 'partial'
   progress: number

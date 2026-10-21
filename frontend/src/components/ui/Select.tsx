@@ -1,31 +1,38 @@
-import { forwardRef } from 'react'
+import { forwardRef, useId } from 'react'
 import { ChevronDown } from 'lucide-react'
 import { cn } from '../../utils/helpers'
 
 interface SelectProps extends React.SelectHTMLAttributes<HTMLSelectElement> {
   label?: string
   error?: string
+  hint?: string
   options: Array<{ value: string; label: string }>
   placeholder?: string
 }
 
 export const Select = forwardRef<HTMLSelectElement, SelectProps>(
-  ({ className, label, error, options, id, placeholder, ...props }, ref) => {
+  ({ className, label, error, hint, options, id, placeholder, ...props }, ref) => {
+    const generatedId = useId()
+    const selectId = id ?? generatedId
+    const messageId = error || hint ? `${selectId}-message` : undefined
+
     return (
       <div>
         {label && (
-          <label htmlFor={id} className="mb-2 block text-[15px] font-medium text-gray-900">
+          <label htmlFor={selectId} className="mb-1.5 block text-[13px] font-medium text-gray-700">
             {label}
           </label>
         )}
         <div className="relative">
           <select
             ref={ref}
-            id={id}
+            id={selectId}
+            aria-invalid={error ? true : undefined}
+            aria-describedby={messageId}
             className={cn(
-              'flex h-11 w-full appearance-none rounded-md border bg-white py-0 pl-3.5 pr-9 text-[15px] text-gray-900',
-              'transition-colors duration-150 disabled:cursor-not-allowed disabled:bg-gray-50 disabled:text-gray-400',
-              error ? 'border-red-400' : 'border-gray-200 hover:border-gray-300',
+              'flex h-10 w-full appearance-none rounded-lg border bg-white py-0 pl-3.5 pr-9 text-[14px] text-gray-900 shadow-sm',
+              'transition-colors duration-150 hover:border-gray-300 disabled:cursor-not-allowed disabled:border-gray-200 disabled:bg-gray-50 disabled:text-gray-400 disabled:shadow-none',
+              error ? 'border-red-400' : 'border-gray-200',
               className,
             )}
             {...props}
@@ -46,7 +53,15 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(
             aria-hidden="true"
           />
         </div>
-        {error && <p className="mt-1.5 text-[13px] text-red-600">{error}</p>}
+        {error ? (
+          <p id={messageId} className="mt-1.5 text-[12px] leading-4 text-red-600">
+            {error}
+          </p>
+        ) : hint ? (
+          <p id={messageId} className="mt-1.5 text-[12px] leading-4 text-gray-500">
+            {hint}
+          </p>
+        ) : null}
       </div>
     )
   },

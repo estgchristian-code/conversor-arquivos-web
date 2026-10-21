@@ -1,27 +1,27 @@
 import { useCallback, useState } from 'react'
 import { useDropzone, type FileRejection } from 'react-dropzone'
 import {
-  Upload,
-  X,
-  FileText,
-  FileSpreadsheet,
-  FileImage,
-  Music,
-  Video,
   Archive,
-  AlertCircle,
+  FileImage,
+  FileSpreadsheet,
+  FileText,
+  Music,
   RotateCcw,
+  Upload,
+  Video,
+  X,
 } from 'lucide-react'
 import { cn, formatFileSize, getFileExtension } from '../../utils/helpers'
 import { Button } from '../ui/Button'
 import { Progress } from '../ui/Progress'
 import { Badge } from '../ui/Badge'
+import { Alert } from '../ui/Alert'
 import type { FileItem } from '../../types'
 
 interface FileDropzoneProps {
   onFilesAdd: (files: FileItem[]) => void
-  acceptedFiles?: Record<string, string[]>
-  inputFormat?: string
+  /** Dica de tipos para o seletor do navegador; a validacao real usa a extensao. */
+  accept?: Record<string, string[]>
   maxFiles?: number
   maxFileSize?: number
   disabled?: boolean
@@ -45,12 +45,15 @@ const FILE_TYPE_ICONS: Record<string, React.ComponentType<{ className?: string }
   odp: FileText,
   jpg: FileImage,
   jpeg: FileImage,
+  jpe: FileImage,
+  jfif: FileImage,
   png: FileImage,
   webp: FileImage,
   avif: FileImage,
   gif: FileImage,
   svg: FileImage,
   tiff: FileImage,
+  tif: FileImage,
   bmp: FileImage,
   heic: FileImage,
   mp3: Music,
@@ -91,16 +94,13 @@ function statusVariant(status: FileItem['status']) {
 
 export function FileDropzone({
   onFilesAdd,
-  acceptedFiles,
-  inputFormat = '',
+  accept,
   maxFiles = 50,
   maxFileSize = 500 * 1024 * 1024,
   disabled = false,
   compact = false,
 }: FileDropzoneProps) {
   const [rejectedFiles, setRejectedFiles] = useState<{ file: File; reason: string }[]>([])
-
-  const formatLabel = inputFormat ? inputFormat.toUpperCase() : ''
 
   const onDrop = useCallback(
     (accepted: File[], rejected: FileRejection[]) => {
@@ -122,17 +122,17 @@ export function FileDropzone({
         rejected.map(({ file, errors }) => ({
           file,
           reason: errors.some((error) => error.code === 'file-invalid-type')
-            ? `Formato incompatível com .${formatLabel || '…'}.`
+            ? 'Formato não suportado.'
             : errors.map((error) => error.message).join(', '),
         })),
       )
     },
-    [onFilesAdd, formatLabel],
+    [onFilesAdd],
   )
 
   const { getRootProps, getInputProps, isDragActive, isDragReject } = useDropzone({
     onDrop,
-    accept: acceptedFiles,
+    accept,
     maxFiles,
     maxSize: maxFileSize,
     disabled,
@@ -140,75 +140,91 @@ export function FileDropzone({
     noKeyboard: false,
   })
 
-  const dropMessage = isDragActive
-    ? formatLabel
-      ? `Solte os arquivos ${formatLabel} aqui`
-      : 'Solte os arquivos aqui'
-    : formatLabel
-    ? `Arraste arquivos ${formatLabel} aqui ou clique para selecionar`
-    : 'Arraste os arquivos até aqui ou clique para selecionar'
+  const heading = disabled
+    ? 'Envio indisponível no momento'
+    : isDragActive
+      ? 'Solte os arquivos aqui'
+      : compact
+        ? 'Arraste mais arquivos ou clique para adicionar'
+        : 'Arraste os arquivos até aqui ou clique para selecionar'
+
+  const helperText = disabled
+    ? 'Aguarde a operação atual ou verifique o limite de arquivos.'
+    : compact
+      ? 'O formato é identificado pela extensão.'
+      : 'O formato é identificado pela extensão e o conteúdo é validado no servidor.'
 
   return (
     <div className="space-y-4">
       <div
         {...getRootProps()}
         className={cn(
-          'relative flex items-center rounded-xl border-2 border-dashed transition-colors duration-150 ease-out',
+          'group relative flex rounded-xl border border-dashed transition-all duration-150',
           compact
-            ? 'min-h-[88px] gap-3.5 px-5 py-4'
-            : 'min-h-[340px] flex-col justify-center gap-4 px-8 py-14 text-center',
+            ? 'min-h-[76px] items-center gap-3.5 px-4 py-3.5'
+            : 'min-h-[280px] flex-col items-center justify-center gap-3 px-6 py-10 text-center',
           !disabled && 'cursor-pointer',
           isDragActive
-            ? 'border-primary-600 bg-primary-50'
+            ? 'border-primary-400 bg-primary-50/80 ring-4 ring-primary-100'
             : isDragReject
-            ? 'border-red-400 bg-red-50'
-            : 'border-gray-200 bg-white hover:border-primary-400 hover:bg-primary-50/40',
-          disabled && 'cursor-not-allowed opacity-60',
+              ? 'border-red-300 bg-red-50/80 ring-4 ring-red-100'
+              : 'border-gray-300 bg-gray-50/40 hover:border-primary-300 hover:bg-primary-50/30',
+          disabled &&
+            'cursor-not-allowed border-gray-200 bg-gray-50 opacity-75 hover:border-gray-200 hover:bg-gray-50',
         )}
       >
         <input {...getInputProps()} />
 
-        <Upload className={cn('shrink-0 text-gray-400', compact ? 'h-5 w-5' : 'h-8 w-8')} />
+        <span
+          className={cn(
+            'grid shrink-0 place-items-center rounded-xl ring-1 ring-inset transition-colors',
+            compact ? 'h-10 w-10' : 'h-14 w-14',
+            isDragActive
+              ? 'bg-white text-primary-600 ring-primary-200'
+              : 'bg-white text-primary-500 ring-gray-200 group-hover:text-primary-600',
+          )}
+        >
+          <Upload className={compact ? 'h-5 w-5' : 'h-6 w-6'} aria-hidden="true" />
+        </span>
 
-        {compact ? (
-          <p className="min-w-0 flex-1 truncate text-[15px] text-gray-500">
-            {formatLabel
-              ? `Arraste mais arquivos ${formatLabel} aqui ou clique para adicionar`
-              : 'Arraste mais arquivos aqui ou clique para adicionar'}
+        <div className={cn('min-w-0', compact ? 'flex-1 text-left' : 'max-w-md')}>
+          <p
+            className={cn(
+              'font-semibold text-gray-900',
+              compact ? 'truncate text-[13px]' : 'text-balance text-[15px]',
+            )}
+          >
+            {heading}
           </p>
-        ) : (
-          <>
-            <p className="text-[15px] font-semibold text-gray-900">{dropMessage}</p>
-            <p className="text-[13px] leading-[18px] text-gray-500">
-              {formatLabel
-                ? `Somente arquivos .${formatLabel} serão aceitos`
-                : 'Selecione o formato dos arquivos para habilitar o envio'}
-            </p>
-            <p className="numeric text-[13px] leading-[18px] text-gray-400">
-              Até {maxFiles} arquivos · {formatFileSize(maxFileSize)} por arquivo
-            </p>
-          </>
+          <p className={cn('mt-1 text-gray-500', compact ? 'text-[11px] leading-4' : 'text-[12px] leading-5')}>
+            {helperText}
+          </p>
+        </div>
+
+        {!compact && (
+          <p className="numeric text-[11px] text-gray-400">
+            Até {maxFiles} arquivos · {formatFileSize(maxFileSize)} por arquivo
+          </p>
+        )}
+
+        {compact && (
+          <span className="hidden shrink-0 rounded-md border border-gray-200 bg-white px-2.5 py-1 text-[11px] font-medium text-gray-600 sm:inline-flex">
+            Adicionar
+          </span>
         )}
       </div>
 
       {rejectedFiles.length > 0 && (
-        <div className="rounded-lg border border-red-200 bg-red-50 px-5 py-4">
-          <div className="mb-2.5 flex items-center gap-2 text-[13px] font-semibold text-red-700">
-            <AlertCircle className="h-4 w-4 shrink-0" aria-hidden="true" />
-            Arquivos não aceitos
-          </div>
-          <ul className="max-h-40 space-y-1.5 overflow-y-auto">
+        <Alert variant="error" title="Arquivos não aceitos">
+          <ul className="max-h-40 space-y-1 overflow-y-auto">
             {rejectedFiles.map(({ file, reason }, index) => (
-              <li
-                key={index}
-                className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-0.5 text-[13px] leading-[18px]"
-              >
-                <span className="truncate font-medium text-red-700">{file.name}</span>
-                <span className="text-red-600">{reason}</span>
+              <li key={index} className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-0.5">
+                <span className="truncate font-medium">{file.name}</span>
+                <span>{reason}</span>
               </li>
             ))}
           </ul>
-        </div>
+        </Alert>
       )}
     </div>
   )
@@ -223,7 +239,7 @@ interface FileListProps {
 
 function FileIcon({ extension }: { extension: string }) {
   const Icon = FILE_TYPE_ICONS[extension.toLowerCase()] || FileText
-  return <Icon className="h-5 w-5 shrink-0 text-gray-400" aria-hidden="true" />
+  return <Icon className="h-5 w-5" aria-hidden="true" />
 }
 
 export function FileList({ files, onRemove, onRetry, uploading }: FileListProps) {
@@ -231,7 +247,7 @@ export function FileList({ files, onRemove, onRetry, uploading }: FileListProps)
 
   return (
     <div className="overflow-hidden rounded-xl border border-gray-200">
-      <div className="divide-y divide-gray-200">
+      <ul className="divide-y divide-gray-100">
         {files.map((fileItem) => {
           const busy = fileItem.status === 'uploading' || fileItem.status === 'converting'
 
@@ -241,21 +257,45 @@ export function FileList({ files, onRemove, onRetry, uploading }: FileListProps)
           const showProgress = fileItem.progress > 0 || busy
 
           return (
-            <div
+            <li
               key={fileItem.id}
-              className="min-h-[68px] px-5 py-3.5 transition-colors duration-150 hover:bg-gray-50"
+              className="px-4 py-3.5 transition-colors duration-150 hover:bg-gray-50/70"
             >
-              {/* Linha principal: nome + status + ações */}
               <div className="flex items-center gap-3">
-                <FileIcon extension={fileItem.extension} />
+                <span className="grid h-10 w-10 shrink-0 place-items-center rounded-lg border border-gray-200 bg-gray-50 text-gray-400">
+                  <FileIcon extension={fileItem.extension} />
+                </span>
 
-                <p className="min-w-0 flex-1 truncate text-[15px] font-medium text-gray-900" title={fileItem.name}>
-                  {fileItem.name}
-                </p>
+                <div className="min-w-0 flex-1">
+                  <div className="flex min-w-0 items-center gap-2">
+                    <p className="truncate text-[13px] font-medium text-gray-900" title={fileItem.name}>
+                      {fileItem.name}
+                    </p>
+                    <Badge variant={statusVariant(displayStatus)} className="shrink-0">
+                      {STATUS_LABEL[displayStatus]}
+                    </Badge>
+                  </div>
 
-                <Badge variant={statusVariant(displayStatus)} className="shrink-0">
-                  {STATUS_LABEL[displayStatus]}
-                </Badge>
+                  <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] leading-4 text-gray-500">
+                    <span className="numeric font-semibold uppercase text-gray-400">{fileItem.extension}</span>
+                    <span className="numeric">{formatFileSize(fileItem.size)}</span>
+                    {fileItem.error && <span className="text-red-600">{fileItem.error}</span>}
+                  </div>
+
+                  {showProgress && (
+                    <div className="mt-2 flex items-center gap-2.5">
+                      <Progress
+                        value={fileItem.progress}
+                        size="sm"
+                        tone={uploadDone ? 'success' : 'accent'}
+                        className="max-w-[220px]"
+                      />
+                      <span className="numeric w-9 shrink-0 text-right text-[11px] text-gray-500">
+                        {Math.round(fileItem.progress)}%
+                      </span>
+                    </div>
+                  )}
+                </div>
 
                 <div className="flex shrink-0 items-center gap-1">
                   {fileItem.status === 'error' && onRetry && (
@@ -282,29 +322,10 @@ export function FileList({ files, onRemove, onRetry, uploading }: FileListProps)
                   </Button>
                 </div>
               </div>
-
-              {/* Linha secundária: metadados, erro e progresso */}
-              <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-2 pl-8 text-[13px] leading-[18px] text-gray-500">
-                <span className="numeric font-semibold uppercase text-gray-400">{fileItem.extension}</span>
-                <span className="numeric">{formatFileSize(fileItem.size)}</span>
-
-                {fileItem.error && <span className="text-red-600">{fileItem.error}</span>}
-
-                {showProgress && (
-                  <div className="flex min-w-[120px] flex-1 items-center gap-2.5 sm:max-w-[220px]">
-                    <Progress
-                      value={fileItem.progress}
-                      size="sm"
-                      tone={uploadDone ? 'success' : 'accent'}
-                    />
-                    <span className="numeric w-9 shrink-0 text-right">{Math.round(fileItem.progress)}%</span>
-                  </div>
-                )}
-              </div>
-            </div>
+            </li>
           )
         })}
-      </div>
+      </ul>
     </div>
   )
 }

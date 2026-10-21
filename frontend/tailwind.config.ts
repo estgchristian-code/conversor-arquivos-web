@@ -55,11 +55,12 @@ const config: Config = {
       borderRadius: {
         md: '6px',
         lg: '8px',
-        xl: '10px',
+        xl: '12px',
       },
       boxShadow: {
         1: '0 1px 2px rgba(16, 24, 40, 0.05)',
         2: '0 4px 8px -2px rgba(16, 24, 40, 0.08)',
+        panel: '0 1px 3px 0 rgba(16, 24, 40, 0.06), 0 1px 2px -1px rgba(16, 24, 40, 0.06)',
       },
       fontSize: {
         xs: ['13px', '18px'],
@@ -76,6 +77,18 @@ const config: Config = {
       animation: {
         'spin-slow': 'spin 3s linear infinite',
         'pulse-slow': 'pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+        'fade-in': 'fade-in 150ms ease-out',
+        'slide-in': 'slide-in 220ms cubic-bezier(0.2, 0, 0, 1)',
+      },
+      keyframes: {
+        'fade-in': {
+          from: { opacity: '0' },
+          to: { opacity: '1' },
+        },
+        'slide-in': {
+          from: { transform: 'translateX(-100%)' },
+          to: { transform: 'translateX(0)' },
+        },
       },
     },
   },

@@ -31,6 +31,13 @@ export class BmpDecodeError extends Error {
   }
 }
 
+export class BmpEncodeError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'BmpEncodeError'
+  }
+}
+
 export function isBmp(buffer: Buffer): boolean {
   return buffer.length >= 2 && buffer.readUInt16LE(0) === BMP_SIGNATURE
 }
@@ -119,6 +126,82 @@ export function decodeBmp(buffer: Buffer): DecodedBmp {
   }
 
   return { data, width, height, channels: 3 }
+}
+
+export interface RawRgbImage {
+  data: Buffer
+  width: number
+  height: number
+  channels: number
+}
+
+/**
+ * Codifica uma imagem RGB/RGBA como BMP 24 bits nao comprimido (BI_RGB).
+ *
+ * O alfa e ignorado; o chamador deve achatar a imagem antes de codificar.
+ */
+export function encodeBmp(image: RawRgbImage): Buffer {
+  const { data, width, height, channels } = image
+
+  if (!Number.isInteger(width) || !Number.isInteger(height) || width <= 0 || height <= 0) {
+    throw new BmpEncodeError(`Dimensoes BMP invalidas (${width}x${height}).`)
+  }
+
+  if (width > MAX_DIMENSION || height > MAX_DIMENSION || width * height > MAX_PIXELS) {
+    throw new BmpEncodeError(`Dimensoes BMP excedem o limite suportado (${width}x${height}).`)
+  }
+
+  if (channels !== 3 && channels !== 4) {
+    throw new BmpEncodeError(`Canais BMP nao suportados (${channels}).`)
+  }
+
+  const requiredBytes = width * height * channels
+
+  if (data.length < requiredBytes) {
+    throw new BmpEncodeError('Dados de pixel insuficientes para gerar o BMP.')
+  }
+
+  const rowStride = Math.ceil((width * 3) / 4) * 4
+  const pixelBytes = rowStride * height
+  const fileSize = FILE_HEADER_SIZE + INFO_HEADER_SIZE + pixelBytes
+  const buffer = Buffer.alloc(fileSize)
+
+  buffer.write('BM', 0, 2, 'ascii')
+  buffer.writeUInt32LE(fileSize, 2)
+  buffer.writeUInt32LE(0, 6)
+  buffer.writeUInt32LE(FILE_HEADER_SIZE + INFO_HEADER_SIZE, 10)
+
+  buffer.writeUInt32LE(INFO_HEADER_SIZE, 14)
+  buffer.writeInt32LE(width, 18)
+  buffer.writeInt32LE(height, 22)
+  buffer.writeUInt16LE(1, 26)
+  buffer.writeUInt16LE(24, 28)
+  buffer.writeUInt32LE(0, 30)
+  buffer.writeUInt32LE(pixelBytes, 34)
+  buffer.writeInt32LE(2835, 38)
+  buffer.writeInt32LE(2835, 42)
+  buffer.writeUInt32LE(0, 46)
+  buffer.writeUInt32LE(0, 50)
+
+  const pixelOffset = FILE_HEADER_SIZE + INFO_HEADER_SIZE
+
+  for (let row = 0; row < height; row += 1) {
+    const sourceRow = height - 1 - row
+    const sourceStart = sourceRow * width * channels
+    const targetStart = pixelOffset + row * rowStride
+
+    for (let column = 0; column < width; column += 1) {
+      const source = sourceStart + column * channels
+      const target = targetStart + column * 3
+
+      // BMP usa BGR.
+      buffer[target] = data[source + 2]
+      buffer[target + 1] = data[source + 1]
+      buffer[target + 2] = data[source]
+    }
+  }
+
+  return buffer
 }
 
 function byteOffsetForColumn(column: number, bitCount: number): number {

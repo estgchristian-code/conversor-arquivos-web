@@ -21,8 +21,8 @@ export const Progress = ({
 
   const sizes = {
     sm: 'h-1.5',
-    md: 'h-[6px]',
-    lg: 'h-2',
+    md: 'h-2',
+    lg: 'h-2.5',
   }
 
   const tones = {
@@ -38,9 +38,9 @@ export const Progress = ({
           className={cn('h-full rounded-full transition-[width] duration-200 ease-out', tones[tone])}
           style={{ width: `${percentage}%` }}
           role="progressbar"
-          aria-valuenow={value}
+          aria-valuenow={Math.round(percentage)}
           aria-valuemin={0}
-          aria-valuemax={max}
+          aria-valuemax={100}
         />
       </div>
       {showLabel && (

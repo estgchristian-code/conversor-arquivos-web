@@ -1,7 +1,7 @@
 import { cn } from '../../utils/helpers'
 
 interface ContainerProps extends React.HTMLAttributes<HTMLDivElement> {
-  size?: 'sm' | 'md' | 'lg' | 'xl' | 'full'
+  size?: 'sm' | 'md' | 'lg' | 'xl' | '2xl' | 'full'
 }
 
 export const Container = ({ className, size = 'xl', children, ...props }: ContainerProps) => {
@@ -10,6 +10,7 @@ export const Container = ({ className, size = 'xl', children, ...props }: Contai
     md: 'max-w-4xl',
     lg: 'max-w-5xl',
     xl: 'max-w-6xl',
+    '2xl': 'max-w-7xl',
     full: 'max-w-full',
   }
 

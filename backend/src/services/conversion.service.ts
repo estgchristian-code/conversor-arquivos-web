@@ -1,13 +1,14 @@
 import { randomUUID } from 'node:crypto'
-import { mkdir, readFile, stat } from 'node:fs/promises'
+import { mkdir, readFile, stat, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import sharp from 'sharp'
 import { lookup as lookupMimeType } from 'mime-types'
 import { conversionRepository } from '../repositories/conversion.repository.js'
 import { uploadRepository } from '../repositories/upload.repository.js'
 import { buildOutputPath, ensureStorageDirs, sanitizeFileName, toPublicPath } from './storage.service.js'
-import { BmpDecodeError, decodeBmp } from '../utils/bmp.js'
+import { BmpDecodeError, BmpEncodeError, decodeBmp, encodeBmp } from '../utils/bmp.js'
 import { createChildLogger } from '../utils/logger.js'
+import { SUPPORTED_EXTENSIONS } from '../constants/supported-formats.js'
 import type {
   ConversionJobRecord,
   ConversionOptions,
@@ -19,11 +20,13 @@ import type {
 
 const conversionLogger = createChildLogger({ module: 'conversion' })
 
-/** Formatos de entradaAceitos pelo motor de imagens nesta etapa. */
-export const IMAGE_INPUT_FORMATS: ReadonlySet<string> = new Set([
-  'jpg',
-  'jpeg',
+/** Formatos de entrada aceitos pelo motor de imagens nesta etapa. */
+export const IMAGE_INPUT_FORMATS: ReadonlySet<string> = SUPPORTED_EXTENSIONS
+
+/** Formatos de saida produzidos pelo motor de imagens nesta etapa. */
+export const IMAGE_OUTPUT_FORMATS: ReadonlySet<string> = new Set([
   'png',
+  'jpg',
   'webp',
   'avif',
   'gif',
@@ -31,18 +34,19 @@ export const IMAGE_INPUT_FORMATS: ReadonlySet<string> = new Set([
   'bmp',
 ])
 
-/** Formatos de saída produced pelo motor de imagens nesta etapa. */
-export const IMAGE_OUTPUT_FORMATS: ReadonlySet<string> = new Set([
-  'png',
-  'jpg',
-  'webp',
-  'avif',
-  'gif',
-])
+/** Normaliza aliases de extensao para comparar formatos equivalentes. */
+function normalizeFormat(format: string): string {
+  if (format === 'jpeg' || format === 'jpe' || format === 'jfif') return 'jpg'
+  if (format === 'tif') return 'tiff'
+  return format
+}
 
 const DEFAULT_QUALITY = 90
 const MIN_QUALITY = 1
 const MAX_QUALITY = 100
+const MAX_SVG_BYTES = 10 * 1024 * 1024
+const MAX_SVG_PIXELS = 100_000_000
+const SVG_DENSITY = 72
 
 export class ConversionError extends Error {
   readonly statusCode: number
@@ -79,6 +83,12 @@ export async function startConversion(request: StartConversionRequest): Promise<
   await conversionRepository.create({
     id,
     fileIds: sources.map((file) => file.id),
+    inputFiles: sources.map((file) => ({
+      id: file.id,
+      originalName: file.originalName,
+      size: file.size,
+      mimeType: file.mimeType,
+    })),
     outputFormat,
     status: 'queued',
     progress: 0,
@@ -181,40 +191,97 @@ async function convertImage(
   const startedAt = Date.now()
 
   const image = await loadImage(source)
+  let outputSize: number
 
-  switch (outputFormat) {
-    case 'png':
-      image.png()
-      break
-    case 'jpg':
-      image.jpeg({ quality: options.quality ?? DEFAULT_QUALITY })
-      break
-    case 'webp':
-      image.webp({ quality: options.quality ?? DEFAULT_QUALITY })
-      break
-    case 'avif':
-      image.avif({ quality: options.quality ?? DEFAULT_QUALITY })
-      break
-    case 'gif':
-      image.gif()
-      break
-    default:
-      throw new ConversionError(`Formato de saida nao suportado: ${outputFormat}`)
+  if (outputFormat === 'bmp') {
+    const { data, info } = await image
+      .flatten({ background: '#ffffff' })
+      .removeAlpha()
+      .toColourspace('srgb')
+      .raw()
+      .toBuffer({ resolveWithObject: true })
+
+    try {
+      const encoded = encodeBmp({
+        data,
+        width: info.width,
+        height: info.height,
+        channels: info.channels,
+      })
+
+      await writeFile(destination, encoded)
+      outputSize = encoded.length
+    } catch (error) {
+      if (error instanceof BmpEncodeError) {
+        throw new ConversionError(`Falha ao gerar BMP (${source.originalName}): ${error.message}`)
+      }
+      throw error
+    }
+  } else {
+    switch (outputFormat) {
+      case 'png':
+        image.png()
+        break
+      case 'jpg':
+        image.jpeg({ quality: options.quality ?? DEFAULT_QUALITY })
+        break
+      case 'webp':
+        image.webp({ quality: options.quality ?? DEFAULT_QUALITY })
+        break
+      case 'avif':
+        image.avif({ quality: options.quality ?? DEFAULT_QUALITY })
+        break
+      case 'gif':
+        image.gif()
+        break
+      case 'tiff':
+        image.tiff({ compression: 'lzw' })
+        break
+      default:
+        throw new ConversionError(`Formato de saida nao suportado: ${outputFormat}`)
+    }
+
+    const info = await image.toFile(destination)
+    outputSize = info.size
   }
-
-  const info = await image.toFile(destination)
 
   return {
     fileId: source.id,
     originalName: source.originalName,
     outputName,
     outputUrl: toPublicPath(destination),
-    outputSize: info.size,
+    outputSize,
     duration: Date.now() - startedAt,
   }
 }
 
 async function loadImage(source: UploadedFileRecord): Promise<ReturnType<typeof sharp>> {
+  if (source.extension === 'svg') {
+    let content: string
+
+    try {
+      const buffer = await readFile(source.path)
+
+      if (buffer.length > MAX_SVG_BYTES) {
+        throw new ConversionError(
+          `SVG excede o limite de ${Math.round(MAX_SVG_BYTES / (1024 * 1024))} MB (${source.originalName}).`,
+        )
+      }
+
+      content = buffer.toString('utf8')
+    } catch (error) {
+      if (error instanceof ConversionError) throw error
+      throw new ConversionError(`Arquivo de origem nao encontrado: ${source.originalName}`, 404)
+    }
+
+    assertSafeSvg(content, source.originalName)
+    return sharp(source.path, {
+      failOn: 'none',
+      limitInputPixels: MAX_SVG_PIXELS,
+      density: SVG_DENSITY,
+    })
+  }
+
   if (source.extension === 'bmp') {
     let buffer: Buffer
 
@@ -238,6 +305,45 @@ async function loadImage(source: UploadedFileRecord): Promise<ReturnType<typeof 
   }
 
   return sharp(source.path, { failOn: 'none' })
+}
+
+/**
+ * Bloqueia recursos ativos/externos em SVG antes da rasterizacao. O objetivo
+ * nao e substituir um sanitizador XML completo, mas impedir os vetores mais
+ * comuns em um arquivo enviado por usuario.
+ */
+function assertSafeSvg(content: string, originalName: string): void {
+  const checks: Array<[RegExp, string]> = [
+    [/<!entity/i, 'entidades XML'],
+    [/<!doctype[^>]*(?:system|public)/i, 'DTD externo'],
+    [/<script\b/i, 'scripts'],
+    [/<foreignobject\b/i, 'foreignObject'],
+    [/\son[a-z]+\s*=/i, 'eventos inline'],
+    [/javascript\s*:/i, 'URL javascript'],
+    [/@import\s+(?:url\()?\s*['"]?(?:https?:|file:|\/\/)/i, 'import externo'],
+    [/url\(\s*['"]?\s*(?:https?:|file:|\/\/)/i, 'URL externa em CSS'],
+    [/xml:base\s*=\s*["']\s*(?:https?:|file:|\/\/)/i, 'xml:base externo'],
+  ]
+
+  for (const [pattern, label] of checks) {
+    if (pattern.test(content)) {
+      throw new ConversionError(`SVG invalido (${originalName}): ${label} nao permitido.`)
+    }
+  }
+
+  const hrefPattern = /\b(?:xlink:)?href\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/gi
+  let match: RegExpExecArray | null
+
+  while ((match = hrefPattern.exec(content)) !== null) {
+    const value = (match[1] ?? match[2] ?? match[3] ?? '').trim().toLowerCase()
+
+    if (!value || value.startsWith('#')) continue
+    if (/^data:image\/(?:png|jpe?g|gif|webp|avif);base64,/.test(value)) continue
+
+    throw new ConversionError(
+      `SVG invalido (${originalName}): referencias externas nao sao permitidas.`,
+    )
+  }
 }
 
 async function resolveSources(fileIds: string[]): Promise<UploadedFileRecord[]> {
@@ -271,7 +377,8 @@ function assertConvertible(sources: UploadedFileRecord[], outputFormat: string):
     )
   }
 
-  const redundant = sources.filter((file) => file.extension === outputFormat || (file.extension === 'jpeg' && outputFormat === 'jpg'))
+  const normalizedOutput = normalizeFormat(outputFormat)
+  const redundant = sources.filter((file) => normalizeFormat(file.extension) === normalizedOutput)
 
   if (redundant.length > 0) {
     const detail = redundant.map((file) => file.originalName).join(', ')

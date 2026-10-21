@@ -1,5 +1,6 @@
 import { fileURLToPath } from 'node:url'
 import fs from 'node:fs'
+import path from 'node:path'
 import Fastify, { type FastifyBaseLogger, type FastifyInstance } from 'fastify'
 import cors from '@fastify/cors'
 import multipart from '@fastify/multipart'
@@ -35,6 +36,16 @@ export async function buildApp(): Promise<FastifyInstance> {
     prefix: '/storage/uploads/',
     index: false,
     decorateReply: false,
+    setHeaders: (response, filePath) => {
+      response.setHeader('X-Content-Type-Options', 'nosniff')
+
+      // SVG e conteudo ativo. O upload nunca deve ser aberto inline no dominio
+      // da API; o download continua disponivel como anexo.
+      if (path.extname(filePath).toLowerCase() === '.svg') {
+        response.setHeader('Content-Disposition', 'attachment')
+        response.setHeader('Content-Security-Policy', "default-src 'none'; sandbox")
+      }
+    },
   })
 
   await app.register(fastifyStatic, {
