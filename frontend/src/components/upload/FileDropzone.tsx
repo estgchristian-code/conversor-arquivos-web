@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { useDropzone, type FileRejection } from 'react-dropzone'
 import { RotateCcw, Upload, X } from 'lucide-react'
 import { cn, formatFileSize, getFileExtension } from '../../utils/helpers'
@@ -8,7 +8,7 @@ import type { FileItem } from '../../types'
 
 interface FileDropzoneProps {
   onFilesAdd: (files: FileItem[]) => void
-  /** Dica de tipos para o seletor do navegador; a validacao real usa a extensao. */
+  /** Extensoes suportadas; usado apenas na validacao por extensao. */
   accept?: Record<string, string[]>
   maxFiles?: number
   maxFileSize?: number
@@ -26,10 +26,38 @@ export function FileDropzone({
 }: FileDropzoneProps) {
   const [rejectedFiles, setRejectedFiles] = useState<{ file: File; reason: string }[]>([])
 
+  const acceptedExtensions = useMemo(
+    () =>
+      new Set(
+        (accept ? Object.values(accept).flat() : []).map((extension) => extension.toLowerCase()),
+      ),
+    [accept],
+  )
+
+  const clearRejectedFiles = useCallback(() => setRejectedFiles([]), [])
+
+  /**
+   * A allowlist do backend e por extensao. A validacao fica fora do
+   * react-dropzone para nao depender do MIME informado pelo Windows nem de
+   * conflitos entre `accept`, `validator` e o input nativo.
+   */
+  const isSupportedFile = useCallback(
+    (file: File) => {
+      if (!file.name) return false
+
+      const extension = `.${getFileExtension(file.name)}`
+      return acceptedExtensions.size === 0 || acceptedExtensions.has(extension)
+    },
+    [acceptedExtensions],
+  )
+
   const onDrop = useCallback(
     (accepted: File[], rejected: FileRejection[]) => {
-      if (accepted.length > 0) {
-        const fileItems: FileItem[] = accepted.map((file) => ({
+      const supported = accepted.filter(isSupportedFile)
+      const unsupported = accepted.filter((file) => !isSupportedFile(file))
+
+      if (supported.length > 0) {
+        const fileItems: FileItem[] = supported.map((file) => ({
           id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
           file,
           name: file.name,
@@ -42,40 +70,44 @@ export function FileDropzone({
         onFilesAdd(fileItems)
       }
 
-      setRejectedFiles(
-        rejected.map(({ file, errors }) => ({
+      setRejectedFiles([
+        ...rejected.map(({ file, errors }) => ({
           file,
           reason: errors.some((error) => error.code === 'file-invalid-type')
             ? 'Formato não suportado.'
             : errors.map((error) => error.message).join(', '),
         })),
-      )
+        ...unsupported.map((file) => ({
+          file,
+          reason: 'Formato não suportado.',
+        })),
+      ])
     },
-    [onFilesAdd],
+    [isSupportedFile, onFilesAdd],
   )
 
   const { getRootProps, getInputProps, isDragActive, isDragReject } = useDropzone({
     onDrop,
-    accept,
+    onDragEnter: clearRejectedFiles,
+    // O react-dropzone nao recebe accept nem validator. O filtro nativo e o
+    // validador customizado foram removidos para evitar que o dialogo/evento
+    // de drop rejeite arquivos suportados. A allowlist e aplicada no onDrop.
     multiple: true,
     maxFiles,
     maxSize: maxFileSize,
     disabled,
     noClick: false,
     noKeyboard: false,
-    // Usa o input nativo. O seletor de arquivos do sistema lida melhor com
-    // extensoes do que com o mapa MIME usado internamente pelo react-dropzone.
+    // Usa o input nativo, sem accept, para o dialogo do sistema mostrar todos
+    // os arquivos. A filtragem por extensao e feita no onDrop.
     useFsAccessApi: false,
   })
 
   /**
-   * No Windows, um accept com varios MIME types pode deixar o filtro nativo
-   * sem os arquivos esperados (sobram apenas as pastas). Para o seletor do
-   * sistema, envia somente as extensoes suportadas; o react-dropzone continua
-   * validando o mapa MIME/extensoes nos drops e na selecao.
+   * O input nativo fica sem accept. O filtro de extensoes do Windows/Edge
+   * escondia arquivos suportados; a validacao continua no onDrop acima.
    */
-  const nativeAccept = accept ? Object.values(accept).flat().join(',') : undefined
-  const inputProps = getInputProps(nativeAccept ? { accept: nativeAccept } : undefined)
+  const inputProps = getInputProps()
 
   const heading = disabled
     ? 'Adição indisponível no momento'

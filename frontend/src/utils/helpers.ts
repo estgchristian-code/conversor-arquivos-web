@@ -14,7 +14,10 @@ export function formatFileSize(bytes: number): string {
 }
 
 export function getFileExtension(filename: string): string {
-  return filename.slice(((filename.lastIndexOf('.') - 1) >>> 0) + 2).toLowerCase()
+  const base = (filename.split(/[\\/]/).pop() ?? '').trim()
+  const normalized = base.replace(/[.\s\u200B-\u200D\uFEFF]+$/, '')
+
+  return normalized.slice(((normalized.lastIndexOf('.') - 1) >>> 0) + 2).toLowerCase()
 }
 
 export function sanitizeFileName(name: string): string {

@@ -19,11 +19,7 @@ const OUTPUT_FORMATS = ['png', 'jpg', 'webp', 'avif', 'gif', 'tiff', 'bmp']
 
 const SUPPORTED_INPUT_LABEL = 'JPG/JPEG, PNG, WEBP, AVIF, GIF, SVG, TIFF/TIF e BMP'
 
-/**
- * Tipos usados apenas como dica no seletor do navegador. A validacao real e
- * feita pela extensao de cada arquivo, porque o MIME informado pelo sistema
- * operacional nem sempre corresponde ao conteudo.
- */
+/** Mapa de extensoes suportadas usado pela validacao do dropzone. */
 const ACCEPTED_INPUT_FILES: Record<string, string[]> = {
   'image/jpeg': ['.jpg', '.jpeg', '.jpe', '.jfif'],
   'image/png': ['.png'],
