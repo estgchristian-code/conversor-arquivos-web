@@ -1,26 +1,47 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Download, Loader2, Trash2 } from 'lucide-react'
 import { formatFileSize, sanitizeFileName } from '../../utils/helpers'
-import { useConversion, useDownloadFile, useStartConversion, useUpload } from '../../hooks/useConversions'
+import { useConversion, useDownloadFile, useHealthCheck, useStartConversion, useUpload } from '../../hooks/useConversions'
 import { Button } from '../ui/Button'
 import { Select } from '../ui/Select'
 import { Alert } from '../ui/Alert'
 import { FileDropzone, FileList } from './FileDropzone'
 import type { ConversionJob, ConversionResult, FileItem, RejectedFile } from '../../types'
 
-/** Formatos de entrada com conversor implementado no backend. */
-const INPUT_FORMATS = ['jpg', 'jpeg', 'png', 'webp', 'avif', 'gif', 'svg', 'tiff', 'bmp']
+/**
+ * Extensoes com conversor real no backend.
+ *
+ * Imagens usam o sharp; documentos, planilhas e apresentacoes usam o
+ * LibreOffice headless. As listas abaixo precisam espelhar
+ * backend/src/constants/supported-formats.ts.
+ */
+const IMAGE_EXTENSIONS = new Set([
+  'jpg', 'jpeg', 'jpe', 'jfif', 'png', 'webp', 'avif', 'gif', 'svg', 'tiff', 'tif', 'bmp',
+])
 
-/** Extensoes aceitas na entrada (TIF e um alias de TIFF, JPE/JFIF de JPEG). */
-const INPUT_EXTENSIONS = new Set([...INPUT_FORMATS, 'tif', 'jpe', 'jfif'])
+const DOCUMENT_EXTENSIONS = new Set(['doc', 'docx', 'odt', 'rtf', 'txt'])
+const SPREADSHEET_EXTENSIONS = new Set(['xls', 'xlsx', 'ods', 'csv'])
+const PRESENTATION_EXTENSIONS = new Set(['ppt', 'pptx', 'odp'])
+const OFFICE_EXTENSIONS = new Set([
+  ...DOCUMENT_EXTENSIONS,
+  ...SPREADSHEET_EXTENSIONS,
+  ...PRESENTATION_EXTENSIONS,
+])
 
-/** Formatos de saida com conversor implementado no backend. */
-const OUTPUT_FORMATS = ['png', 'jpg', 'webp', 'avif', 'gif', 'tiff', 'bmp']
+type FileCategory = 'image' | 'document' | 'spreadsheet' | 'presentation'
 
-const SUPPORTED_INPUT_LABEL = 'JPG/JPEG, PNG, WEBP, AVIF, GIF, SVG, TIFF/TIF e BMP'
+/** Saidas disponiveis para cada categoria (mesma regra do backend). */
+const OUTPUT_FORMATS_BY_CATEGORY: Record<FileCategory, string[]> = {
+  image: ['png', 'jpg', 'webp', 'avif', 'gif', 'tiff', 'bmp'],
+  document: ['pdf'],
+  spreadsheet: ['pdf', 'csv'],
+  presentation: ['pdf'],
+}
 
-/** Mapa de extensoes suportadas usado pela validacao do dropzone. */
-const ACCEPTED_INPUT_FILES: Record<string, string[]> = {
+const IMAGE_INPUT_LABEL = 'JPG/JPEG, PNG, WEBP, AVIF, GIF, SVG, TIFF/TIF e BMP'
+const OFFICE_INPUT_LABEL = 'DOC/DOCX, ODT, RTF, TXT, XLS/XLSX, ODS, CSV, PPT/PPTX e ODP'
+
+const IMAGE_ACCEPT: Record<string, string[]> = {
   'image/jpeg': ['.jpg', '.jpeg', '.jpe', '.jfif'],
   'image/png': ['.png'],
   'image/webp': ['.webp'],
@@ -29,6 +50,21 @@ const ACCEPTED_INPUT_FILES: Record<string, string[]> = {
   'image/svg+xml': ['.svg'],
   'image/tiff': ['.tiff', '.tif'],
   'image/bmp': ['.bmp'],
+}
+
+const OFFICE_ACCEPT: Record<string, string[]> = {
+  'application/msword': ['.doc'],
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document': ['.docx'],
+  'application/vnd.oasis.opendocument.text': ['.odt'],
+  'application/rtf': ['.rtf'],
+  'text/plain': ['.txt'],
+  'application/vnd.ms-excel': ['.xls'],
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['.xlsx'],
+  'application/vnd.oasis.opendocument.spreadsheet': ['.ods'],
+  'text/csv': ['.csv'],
+  'application/vnd.ms-powerpoint': ['.ppt'],
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation': ['.pptx'],
+  'application/vnd.oasis.opendocument.presentation': ['.odp'],
 }
 
 const toLabel = (format: string) => format.toUpperCase()
@@ -41,16 +77,36 @@ function normalizeFormat(format: string): string {
   return normalized
 }
 
-function isSupportedInput(extension: string): boolean {
-  return INPUT_EXTENSIONS.has(extension.toLowerCase())
+function getCategory(extension: string): FileCategory | null {
+  const normalized = extension.toLowerCase()
+
+  if (IMAGE_EXTENSIONS.has(normalized)) return 'image'
+  if (DOCUMENT_EXTENSIONS.has(normalized)) return 'document'
+  if (SPREADSHEET_EXTENSIONS.has(normalized)) return 'spreadsheet'
+  if (PRESENTATION_EXTENSIONS.has(normalized)) return 'presentation'
+
+  return null
 }
 
-/** Formatos distintos detectados pela extensao dos arquivos do lote. */
+function isSupportedInput(extension: string, documentsAvailable: boolean): boolean {
+  const normalized = extension.toLowerCase()
+  return IMAGE_EXTENSIONS.has(normalized) || (documentsAvailable && OFFICE_EXTENSIONS.has(normalized))
+}
+
+function describeSupportedInputs(documentsAvailable: boolean): string {
+  return documentsAvailable ? `${IMAGE_INPUT_LABEL}, ${OFFICE_INPUT_LABEL}` : IMAGE_INPUT_LABEL
+}
+
+function getAcceptedInputFiles(documentsAvailable: boolean): Record<string, string[]> {
+  return documentsAvailable ? { ...IMAGE_ACCEPT, ...OFFICE_ACCEPT } : IMAGE_ACCEPT
+}
+
+/** Formatos distintos detectados pela extensao do arquivo selecionado. */
 function getDetectedInputFormats(files: FileItem[]): string[] {
   const formats = new Set<string>()
 
   for (const file of files) {
-    if (isSupportedInput(file.extension)) {
+    if (getCategory(file.extension)) {
       formats.add(normalizeFormat(file.extension))
     }
   }
@@ -59,24 +115,33 @@ function getDetectedInputFormats(files: FileItem[]): string[] {
 }
 
 /**
- * Calcula os formatos de saida compativeis com todos os arquivos selecionados.
- * A selecao so aparece depois que ha arquivos, e um formato de saida nunca pode
- * ser igual ao formato de nenhuma entrada (o backend rejeita o lote inteiro).
+ * Calcula os formatos de saida compativeis com o arquivo selecionado.
+ * A lista fica vazia quando a extensao nao tem categoria conhecida.
  */
-function getOutputOptions(files: FileItem[]): Array<{ value: string; label: string }> {
+function getOutputOptions(
+  files: FileItem[],
+  documentsAvailable: boolean,
+): Array<{ value: string; label: string }> {
   if (files.length === 0) return []
 
-  const inputFormats = new Set(getDetectedInputFormats(files))
+  const categories = new Set<FileCategory>()
 
-  if (inputFormats.size === 0) return []
+  for (const file of files) {
+    const category = getCategory(file.extension)
+    if (category) categories.add(category)
+  }
 
-  return OUTPUT_FORMATS.filter((output) => !inputFormats.has(normalizeFormat(output))).map((format) => ({
-    value: format,
-    label: toLabel(format),
-  }))
+  if (categories.size !== 1) return []
+
+  const category = Array.from(categories)[0]
+  if (category !== 'image' && !documentsAvailable) return []
+
+  const inputFormats = new Set(files.map((file) => normalizeFormat(file.extension)))
+
+  return OUTPUT_FORMATS_BY_CATEGORY[category]
+    .filter((output) => !inputFormats.has(normalizeFormat(output)))
+    .map((format) => ({ value: format, label: toLabel(format) }))
 }
-
-const MAX_FILES = 50
 
 export function BatchManager({ onStartConversion }: { onStartConversion?: (files: FileItem[], outputFormat: string) => void }) {
   const [files, setFiles] = useState<FileItem[]>([])
@@ -88,6 +153,15 @@ export function BatchManager({ onStartConversion }: { onStartConversion?: (files
   const uploadMutation = useUpload()
   const startMutation = useStartConversion()
   const downloadMutation = useDownloadFile()
+  const { data: health } = useHealthCheck()
+  // Documentos/planilhas so entram na UI quando o backend confirma que o
+  // LibreOffice esta disponivel; sem isso o upload seria aceito e falharia.
+  const documentsAvailable = health?.capabilities?.documents === true
+  const acceptedInputFiles = useMemo(
+    () => getAcceptedInputFiles(documentsAvailable),
+    [documentsAvailable],
+  )
+  const supportedInputLabel = describeSupportedInputs(documentsAvailable)
   const filesRef = useRef<FileItem[]>([])
   const chainRef = useRef<Promise<void>>(Promise.resolve())
   const pendingRef = useRef(0)
@@ -98,7 +172,10 @@ export function BatchManager({ onStartConversion }: { onStartConversion?: (files
     filesRef.current = files
   }, [files])
 
-  const outputOptions = useMemo(() => getOutputOptions(files), [files])
+  const outputOptions = useMemo(
+    () => getOutputOptions(files, documentsAvailable),
+    [files, documentsAvailable],
+  )
   const detectedInputFormats = useMemo(() => getDetectedInputFormats(files), [files])
 
   useEffect(() => {
@@ -167,15 +244,18 @@ export function BatchManager({ onStartConversion }: { onStartConversion?: (files
       applyServerResult(targets, result)
 
       if (result.rejected.length > 0) {
+        const rejectedList = result.rejected
+          .map((entry) => `${entry.name} (${entry.reason})`)
+          .join('; ')
         setNotice({
           type: 'error',
-          text: `${result.files.length} enviado(s). Rejeitados: ${result.rejected
-            .map((entry) => `${entry.name} (${entry.reason})`)
-            .join('; ')}`,
+          text: result.files.length > 0
+            ? `Arquivo enviado. Rejeitado: ${rejectedList}`
+            : `Arquivo rejeitado pelo servidor: ${rejectedList}`,
         })
       }
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Falha no envio dos arquivos'
+      const message = error instanceof Error ? error.message : 'Falha no envio do arquivo'
       setFiles((prev) =>
         prev.map((item) => (ids.has(item.id) ? { ...item, status: 'error', progress: 0, error: message } : item)),
       )
@@ -207,51 +287,39 @@ export function BatchManager({ onStartConversion }: { onStartConversion?: (files
   }
 
   const handleFilesAdd = (newFiles: FileItem[]) => {
-    const previous = filesRef.current
-    const remaining = Math.max(0, MAX_FILES - previous.length)
-
-    if (remaining === 0) {
+    if (filesRef.current.length > 0) {
       setNotice({
         type: 'error',
-        text: `Limite de ${MAX_FILES} arquivos atingido. Remova algum arquivo antes de adicionar outros.`,
+        text: 'Já existe um arquivo selecionado. Remova-o antes de escolher outro.',
       })
       return
     }
+
+    if (newFiles.length !== 1) {
+      setNotice({
+        type: 'error',
+        text: 'Envie apenas 1 arquivo por vez. Nenhum arquivo foi adicionado.',
+      })
+      return
+    }
+
+    const [file] = newFiles
 
     // A extensao identifica o formato. O conteudo sera validado pelo backend
     // durante a conversao, sem exigir uma escolha previa de formato de entrada.
-    const compatible = newFiles.filter((file) => isSupportedInput(file.extension))
-    const unsupported = newFiles.filter((file) => !isSupportedInput(file.extension))
-
-    if (compatible.length === 0) {
-      const names = unsupported.slice(0, 3).map((file) => file.name).join(', ')
-      const extra = unsupported.length > 3 ? ` e mais ${unsupported.length - 3}` : ''
+    if (!isSupportedInput(file.extension, documentsAvailable)) {
       setNotice({
         type: 'error',
-        text: `Nenhum arquivo aceito. Formatos suportados: ${SUPPORTED_INPUT_LABEL}.${
-          names ? ` Ignorados: ${names}${extra}.` : ''
-        }`,
+        text: `Nenhum arquivo aceito. Formatos suportados: ${supportedInputLabel}. Ignorado: ${file.name}.`,
       })
       return
     }
 
-    const accepted = compatible.slice(0, remaining)
-    const overLimit = compatible.length - accepted.length
-    setFiles((prev) => [...prev, ...accepted])
-
-    if (unsupported.length > 0 || overLimit > 0) {
-      const parts: string[] = []
-
-      if (unsupported.length > 0) parts.push(`${unsupported.length} com formato não suportado`)
-      if (overLimit > 0) parts.push(`${overLimit} além do limite de ${MAX_FILES} arquivos`)
-
-      setNotice({
-        type: 'error',
-        text: `${parts.join(' e ')} ignorado(s). Formatos suportados: ${SUPPORTED_INPUT_LABEL}.`,
-      })
-    }
-
-    enqueueUpload([...previous, ...accepted])
+    // Atualiza a referencia antes do state para bloquear uma segunda adicao
+    // mesmo que ela aconteca antes do proximo render.
+    filesRef.current = [file]
+    setFiles([file])
+    enqueueUpload([file])
   }
 
   const handleRetry = (id: string) => {
@@ -260,10 +328,13 @@ export function BatchManager({ onStartConversion }: { onStartConversion?: (files
   }
 
   const handleRemove = (id: string) => {
-    setFiles((prev) => prev.filter((f) => f.id !== id))
+    const next = filesRef.current.filter((f) => f.id !== id)
+    filesRef.current = next
+    setFiles(next)
   }
 
   const handleClearAll = () => {
+    filesRef.current = []
     setFiles([])
     setNotice(null)
     setConversionId(null)
@@ -347,7 +418,7 @@ export function BatchManager({ onStartConversion }: { onStartConversion?: (files
           if (failed > 0) {
             setNotice({
               type: 'error',
-              text: `${results.length} de ${targets.length} arquivo(s) convertido(s). ${job.error ?? ''}`.trim(),
+              text: job.error?.trim() || 'Falha ao converter o arquivo.',
             })
           }
         },
@@ -361,7 +432,7 @@ export function BatchManager({ onStartConversion }: { onStartConversion?: (files
                 : f,
             ),
           )
-          setNotice({ type: 'error', text: `Falha ao converter os arquivos: ${error.message}` })
+          setNotice({ type: 'error', text: `Falha ao converter o arquivo: ${error.message}` })
         },
       },
     )
@@ -387,30 +458,42 @@ export function BatchManager({ onStartConversion }: { onStartConversion?: (files
 
   let convertDisabledReason = ''
   if (isUploading) {
-    convertDisabledReason = 'Aguarde o envio dos arquivos.'
+    convertDisabledReason = 'Aguarde o envio do arquivo.'
   } else if (outputOptions.length === 0) {
-    convertDisabledReason = 'Nenhum formato de saída compatível com o lote.'
+    convertDisabledReason = 'Nenhum formato de saída compatível com o arquivo.'
   } else if (!outputFormat) {
     convertDisabledReason = 'Escolha o formato de saída.'
   } else if (convertibleFiles.length === 0) {
     convertDisabledReason =
-      errorCount > 0 ? 'Nenhum arquivo válido para converter.' : 'Aguarde o envio dos arquivos.'
+      errorCount > 0 ? 'Nenhum arquivo válido para converter.' : 'Aguarde o envio do arquivo.'
   }
 
   return (
     <div className="rounded-xl border border-gray-200 bg-white p-4 sm:p-5">
       {results.length === 0 ? (
         <>
-          <FileDropzone
-            onFilesAdd={handleFilesAdd}
-            accept={ACCEPTED_INPUT_FILES}
-            disabled={isUploading || isConverting || files.length >= MAX_FILES}
-            maxFiles={Math.max(1, MAX_FILES - files.length)}
-            compact={files.length > 0}
-          />
+          {health && !documentsAvailable && (
+            <p className="mb-3 text-[12px] leading-5 text-gray-500">
+              Documentos e planilhas estão indisponíveis: o LibreOffice não foi encontrado no
+              servidor.
+            </p>
+          )}
+
+          {files.length === 0 && (
+            <FileDropzone
+              onFilesAdd={handleFilesAdd}
+              accept={acceptedInputFiles}
+              disabled={isUploading || isConverting}
+            />
+          )}
 
           {files.length > 0 && (
-            <div className="mt-4 space-y-4">
+            <div className="space-y-4">
+              <p className="text-[12px] leading-5 text-gray-500">
+                {isUploading || isConverting
+                  ? 'Aguarde a operação atual para escolher outro arquivo.'
+                  : 'Para escolher outro arquivo, remova o atual.'}
+              </p>
               <FileList
                 files={files}
                 onRemove={handleRemove}
@@ -436,13 +519,13 @@ export function BatchManager({ onStartConversion }: { onStartConversion?: (files
                   className="w-full sm:w-auto"
                 >
                   {isConverting && <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />}
-                  {isConverting ? 'Convertendo...' : 'Converter arquivos'}
+                  {isConverting ? 'Convertendo...' : 'Converter arquivo'}
                 </Button>
               </div>
 
               {hasNoOutputOptions && (
                 <p className="text-[12px] leading-5 text-amber-700">
-                  Nenhum formato de saída compatível com todos os arquivos do lote
+                  Nenhum formato de saída compatível com o arquivo selecionado
                   {detectedInputFormats.length > 0
                     ? ` (${detectedInputFormats.map(toLabel).join(', ')}).`
                     : '.'}
@@ -460,8 +543,8 @@ export function BatchManager({ onStartConversion }: { onStartConversion?: (files
           <div>
             <p className="text-[14px] font-semibold text-gray-900">Resultados</p>
             <p className="text-[12px] text-gray-500">
-              {results.length} {results.length === 1 ? 'arquivo convertido' : 'arquivos convertidos'} para .
-              {(activeJob?.outputFormat ?? outputFormat).toUpperCase()}
+              {results.length === 1 ? 'Arquivo convertido' : 'Arquivos convertidos'} para{' '}
+              {(activeJob?.outputFormat ?? outputFormat).toUpperCase()}.
             </p>
           </div>
 
@@ -516,7 +599,7 @@ export function BatchManager({ onStartConversion }: { onStartConversion?: (files
             disabled={isUploading || isConverting || files.length === 0}
           >
             <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
-            Limpar tudo
+            {results.length > 0 ? 'Nova conversão' : 'Limpar'}
           </Button>
         </div>
       )}

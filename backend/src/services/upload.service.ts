@@ -10,7 +10,9 @@ import {
   ALLOWED_UPLOAD_FIELDS,
   formatSizeLimit,
   isAllowedExtension,
+  isOfficeExtension,
 } from '../constants/supported-formats.js'
+import { getDocumentEngineStatus } from './document-engine.service.js'
 import { uploadRepository } from '../repositories/upload.repository.js'
 import type {
   RejectedFile,
@@ -43,73 +45,92 @@ export async function processUpload(parts: AsyncIterable<Multipart>): Promise<Up
   const rejected: RejectedFile[] = []
   let partCount = 0
 
-  // Cada part.file precisa ser consumido dentro deste laco: o busboy so avanca para a
-  // proxima parte quando o stream da atual e drenado.
-  for await (const part of parts) {
-    if (part.type !== 'file') continue
+  try {
+    // Cada part.file precisa ser consumido dentro deste laco: o busboy so avanca para a
+    // proxima parte quando o stream da atual e drenado.
+    for await (const part of parts) {
+      if (part.type !== 'file') continue
 
-    partCount += 1
+      partCount += 1
 
-    if (partCount > config.upload.maxFiles) {
-      throw new UploadValidationError(
-        `Quantidade excedida: sao permitidos ate ${config.upload.maxFiles} arquivos por envio.`,
-      )
-    }
+      if (partCount > config.upload.maxFiles) {
+        throw new UploadValidationError(tooManyFilesMessage())
+      }
 
-    const originalName = sanitizeFileName(part.filename || 'arquivo')
-    const extension = path.extname(originalName).replace('.', '').toLowerCase()
+      const originalName = sanitizeFileName(part.filename || 'arquivo')
+      const extension = path.extname(originalName).replace('.', '').toLowerCase()
 
-    if (!ALLOWED_UPLOAD_FIELDS.has(part.fieldname)) {
-      drain(part)
-      rejected.push({ name: originalName, reason: `campo "${part.fieldname}" nao suportado` })
-      continue
-    }
+      if (!ALLOWED_UPLOAD_FIELDS.has(part.fieldname)) {
+        drain(part)
+        rejected.push({ name: originalName, reason: `campo "${part.fieldname}" nao suportado` })
+        continue
+      }
 
-    if (!isAllowedExtension(extension)) {
-      drain(part)
-      rejected.push({ name: originalName, reason: `formato ".${extension}" nao suportado` })
-      continue
-    }
+      if (!isAllowedExtension(extension)) {
+        drain(part)
+        rejected.push({ name: originalName, reason: `formato ".${extension}" nao suportado` })
+        continue
+      }
 
-    const id = randomUUID()
-    const destination = buildUploadPath(id, originalName)
-    const target = createWriteStream(destination)
+      if (isOfficeExtension(extension) && !getDocumentEngineStatus().available) {
+        drain(part)
+        rejected.push({
+          name: originalName,
+          reason: 'conversor de documentos indisponivel no servidor (LibreOffice nao encontrado)',
+        })
+        continue
+      }
 
-    try {
-      await pipeline(part.file, target)
-    } catch (error) {
-      await unlink(destination).catch(() => undefined)
-      uploadLogger.error({ err: error, originalName }, 'Falha ao gravar arquivo enviado')
-      rejected.push({ name: originalName, reason: 'falha ao gravar o arquivo no storage' })
-      continue
-    }
+      const id = randomUUID()
+      const destination = buildUploadPath(id, originalName)
+      const target = createWriteStream(destination)
 
-    const size = target.bytesWritten
+      try {
+        await pipeline(part.file, target)
+      } catch (error) {
+        await unlink(destination).catch(() => undefined)
+        uploadLogger.error({ err: error, originalName }, 'Falha ao gravar arquivo enviado')
+        rejected.push({ name: originalName, reason: 'falha ao gravar o arquivo no storage' })
+        continue
+      }
 
-    if (part.file.truncated || size > config.upload.maxFileSize) {
-      await unlink(destination).catch(() => undefined)
-      rejected.push({
-        name: originalName,
-        reason: `excede o tamanho maximo de ${formatSizeLimit(config.upload.maxFileSize)}`,
+      const size = target.bytesWritten
+
+      if (part.file.truncated || size > config.upload.maxFileSize) {
+        await unlink(destination).catch(() => undefined)
+        rejected.push({
+          name: originalName,
+          reason: `excede o tamanho maximo de ${formatSizeLimit(config.upload.maxFileSize)}`,
+        })
+        continue
+      }
+
+      if (size === 0) {
+        await unlink(destination).catch(() => undefined)
+        rejected.push({ name: originalName, reason: 'arquivo vazio' })
+        continue
+      }
+
+      records.push({
+        id,
+        originalName,
+        size,
+        mimeType: lookupMimeType(originalName) || part.mimetype || 'application/octet-stream',
+        extension,
+        path: destination,
+        uploadedAt: createdAt,
       })
-      continue
+    }
+  } catch (error) {
+    // Se o multipart barrar a segunda parte, o primeiro arquivo ja pode ter
+    // sido gravado. Remove tudo para nao deixar arquivo orfao no storage.
+    await removeStoredFiles(records)
+
+    if (isFilesLimitError(error)) {
+      throw new UploadValidationError(tooManyFilesMessage())
     }
 
-    if (size === 0) {
-      await unlink(destination).catch(() => undefined)
-      rejected.push({ name: originalName, reason: 'arquivo vazio' })
-      continue
-    }
-
-    records.push({
-      id,
-      originalName,
-      size,
-      mimeType: lookupMimeType(originalName) || part.mimetype || 'application/octet-stream',
-      extension,
-      path: destination,
-      uploadedAt: createdAt,
-    })
+    throw error
   }
 
   if (partCount === 0) {
@@ -142,4 +163,23 @@ export async function processUpload(parts: AsyncIterable<Multipart>): Promise<Up
 
 function drain(part: MultipartFile): void {
   part.file.resume()
+}
+
+function tooManyFilesMessage(): string {
+  return config.upload.maxFiles === 1
+    ? 'Envie apenas 1 arquivo por vez. Nenhum arquivo foi salvo.'
+    : `Envie no máximo ${config.upload.maxFiles} arquivos por vez. Nenhum arquivo foi salvo.`
+}
+
+async function removeStoredFiles(records: UploadedFileRecord[]): Promise<void> {
+  await Promise.all(records.map((record) => unlink(record.path).catch(() => undefined)))
+}
+
+function isFilesLimitError(error: unknown): boolean {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    'code' in error &&
+    (error as { code?: unknown }).code === 'FST_FILES_LIMIT'
+  )
 }

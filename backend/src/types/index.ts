@@ -95,9 +95,16 @@ export interface ApiResponse<T> {
   message?: string
 }
 
+export interface HealthCapabilities {
+  images: boolean
+  documents: boolean
+  documentEngine: 'libreoffice' | null
+}
+
 export interface HealthStatus {
   status: 'ok' | 'degraded'
   timestamp: string
   uptime: number
   environment: string
+  capabilities: HealthCapabilities
 }

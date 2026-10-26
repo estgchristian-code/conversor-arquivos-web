@@ -87,8 +87,8 @@ function UploadPage({ onStartConversion }: { onStartConversion?: () => void }) {
     <div>
       <PageHeader
         eyebrow="Conversão"
-        title="Conversão em lote"
-        description="Adicione os arquivos, escolha o formato de saída e converta."
+        title="Conversão de arquivo"
+        description="Adicione um arquivo, escolha o formato de saída e converta."
       />
       <BatchManager onStartConversion={onStartConversion} />
     </div>
@@ -636,7 +636,7 @@ function SettingsPage({ apiStatus }: { apiStatus: ApiStatus }) {
               </div>
             </dl>
             <p className="mt-4 border-t border-gray-100 pt-4 text-[12px] text-gray-500">
-              Conversor de Arquivos · CRCPR
+Conversor de Arquivos
             </p>
           </CardContent>
         </Card>
@@ -706,10 +706,10 @@ export default function App() {
 
         <footer className="border-t border-gray-200/70">
           <div className="mx-auto flex w-full max-w-7xl flex-col items-center justify-between gap-1.5 px-5 py-5 text-[11px] text-gray-400 sm:flex-row sm:px-8">
-            <p>Conversor de Arquivos · CRCPR</p>
+            <p>Conversor de Arquivos</p>
             <p className="flex items-center gap-1.5">
               <FileImage className="h-3.5 w-3.5" aria-hidden="true" />
-              Conversão de imagens em lote
+              Conversão de arquivo
             </p>
           </div>
         </footer>

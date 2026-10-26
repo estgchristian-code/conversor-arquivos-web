@@ -1,5 +1,5 @@
 import axios, { AxiosInstance, AxiosError } from 'axios'
-import type { ApiResponse, UploadResponse, ConversionJob, PaginatedResponse, StartConversionRequest } from '../types'
+import type { ApiResponse, UploadResponse, ConversionJob, PaginatedResponse, StartConversionRequest, HealthStatus } from '../types'
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || '/api'
 
@@ -47,7 +47,11 @@ class ApiClient {
   }
 
   async startConversion(request: StartConversionRequest): Promise<ConversionJob> {
-    const response = await this.client.post<ApiResponse<ConversionJob>>('/conversion', request)
+    // Documentos podem levar minutos (LibreOffice); o limite e por arquivo no
+    // backend (DOCUMENT_CONVERSION_TIMEOUT_MS), nao no cliente.
+    const response = await this.client.post<ApiResponse<ConversionJob>>('/conversion', request, {
+      timeout: 0,
+    })
     return response.data.data
   }
 
@@ -70,8 +74,8 @@ class ApiClient {
     return response.data
   }
 
-  async healthCheck(): Promise<{ status: string; timestamp: string }> {
-    const response = await this.client.get<ApiResponse<{ status: string; timestamp: string }>>('/health')
+  async healthCheck(): Promise<HealthStatus> {
+    const response = await this.client.get<ApiResponse<HealthStatus>>('/health')
     return response.data.data
   }
 }

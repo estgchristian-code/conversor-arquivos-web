@@ -1,14 +1,30 @@
 import { randomUUID } from 'node:crypto'
-import { mkdir, readFile, stat, writeFile } from 'node:fs/promises'
+import { copyFile, mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import sharp from 'sharp'
 import { lookup as lookupMimeType } from 'mime-types'
 import { conversionRepository } from '../repositories/conversion.repository.js'
 import { uploadRepository } from '../repositories/upload.repository.js'
-import { buildOutputPath, ensureStorageDirs, sanitizeFileName, toPublicPath } from './storage.service.js'
+import {
+  buildOutputPath,
+  ensureStorageDirs,
+  getStoragePaths,
+  sanitizeFileName,
+  toPublicPath,
+} from './storage.service.js'
 import { BmpDecodeError, BmpEncodeError, decodeBmp, encodeBmp } from '../utils/bmp.js'
 import { createChildLogger } from '../utils/logger.js'
-import { SUPPORTED_EXTENSIONS } from '../constants/supported-formats.js'
+import {
+  IMAGE_EXTENSIONS,
+  SUPPORTED_EXTENSIONS,
+  getFileCategory,
+  type FileCategory,
+  type OfficeCategory,
+} from '../constants/supported-formats.js'
+import {
+  convertOfficeFile,
+  getDocumentEngineStatus,
+} from './document-engine.service.js'
 import type {
   ConversionJobRecord,
   ConversionOptions,
@@ -20,10 +36,10 @@ import type {
 
 const conversionLogger = createChildLogger({ module: 'conversion' })
 
-/** Formatos de entrada aceitos pelo motor de imagens nesta etapa. */
-export const IMAGE_INPUT_FORMATS: ReadonlySet<string> = SUPPORTED_EXTENSIONS
+/** Formatos de entrada aceitos pelo motor de imagens. */
+export const IMAGE_INPUT_FORMATS: ReadonlySet<string> = IMAGE_EXTENSIONS
 
-/** Formatos de saida produzidos pelo motor de imagens nesta etapa. */
+/** Formatos de saida produzidos pelo motor de imagens. */
 export const IMAGE_OUTPUT_FORMATS: ReadonlySet<string> = new Set([
   'png',
   'jpg',
@@ -33,6 +49,31 @@ export const IMAGE_OUTPUT_FORMATS: ReadonlySet<string> = new Set([
   'tiff',
   'bmp',
 ])
+
+/**
+ * Saidas permitidas por categoria de documento. PDF e o formato universal do
+ * LibreOffice; planilhas tambem podem sair em CSV.
+ */
+export const OFFICE_OUTPUT_FORMATS: Readonly<Record<OfficeCategory, ReadonlySet<string>>> = {
+  document: new Set(['pdf']),
+  spreadsheet: new Set(['pdf', 'csv']),
+  presentation: new Set(['pdf']),
+}
+
+const OUTPUT_FORMATS: ReadonlySet<string> = new Set([
+  ...IMAGE_OUTPUT_FORMATS,
+  ...OFFICE_OUTPUT_FORMATS.document,
+  ...OFFICE_OUTPUT_FORMATS.spreadsheet,
+  ...OFFICE_OUTPUT_FORMATS.presentation,
+])
+
+const CATEGORY_LABELS: Record<FileCategory, string> = {
+  image: 'imagens',
+  document: 'documentos',
+  spreadsheet: 'planilhas',
+  presentation: 'apresentacoes',
+}
+
 
 /** Normaliza aliases de extensao para comparar formatos equivalentes. */
 function normalizeFormat(format: string): string {
@@ -106,7 +147,7 @@ export async function startConversion(request: StartConversionRequest): Promise<
 
   for (const [index, source] of sources.entries()) {
     try {
-      results.push(await convertImage(source, id, outputFormat, options))
+      results.push(await convertFile(source, id, outputFormat, options))
     } catch (error) {
       const reason = error instanceof Error ? error.message : 'erro desconhecido'
       failures.push(`${source.originalName}: ${reason}`)
@@ -255,6 +296,89 @@ async function convertImage(
   }
 }
 
+async function convertFile(
+  source: UploadedFileRecord,
+  jobId: string,
+  outputFormat: string,
+  options: ConversionOptions,
+): Promise<ConversionResultRecord> {
+  const category = getFileCategory(source.extension)
+
+  if (!category) {
+    throw new ConversionError(
+      `Formato de entrada sem conversor disponivel: ${source.originalName} (.${source.extension}).`,
+    )
+  }
+
+  if (category === 'image') {
+    return convertImage(source, jobId, outputFormat, options)
+  }
+
+  return convertOfficeDocument(source, jobId, outputFormat)
+}
+
+async function convertOfficeDocument(
+  source: UploadedFileRecord,
+  jobId: string,
+  outputFormat: string,
+): Promise<ConversionResultRecord> {
+  const engine = getDocumentEngineStatus()
+
+  if (!engine.available) {
+    throw new ConversionError(
+      engine.reason ?? 'Conversor de documentos indisponivel no servidor.',
+      503,
+    )
+  }
+
+  const destination = buildOutputPath(jobId, source.id, outputFormat)
+  await mkdir(path.dirname(destination), { recursive: true })
+
+  // Diretorio temporario no mesmo volume do storage para permitir rename.
+  const workDir = path.join(
+    getStoragePaths().outputDir,
+    '.tmp',
+    `${jobId}-${source.id}-${randomUUID()}`,
+  )
+  await mkdir(workDir, { recursive: true })
+
+  const baseName = path.parse(source.originalName).name || 'arquivo'
+  const outputName = `${baseName}.${outputFormat}`
+  const startedAt = Date.now()
+
+  try {
+    const produced = await convertOfficeFile({
+      inputPath: source.path,
+      outputDir: workDir,
+      outputFormat,
+    })
+
+    await moveFile(produced.path, destination)
+    const info = await stat(destination)
+
+    return {
+      fileId: source.id,
+      originalName: source.originalName,
+      outputName,
+      outputUrl: toPublicPath(destination),
+      outputSize: info.size,
+      duration: Date.now() - startedAt,
+    }
+  } finally {
+    await rm(workDir, { recursive: true, force: true }).catch(() => undefined)
+  }
+}
+
+async function moveFile(from: string, to: string): Promise<void> {
+  try {
+    await rename(from, to)
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'EXDEV') throw error
+    await copyFile(from, to)
+    await rm(from, { force: true })
+  }
+}
+
 async function loadImage(source: UploadedFileRecord): Promise<ReturnType<typeof sharp>> {
   if (source.extension === 'svg') {
     let content: string
@@ -367,17 +491,59 @@ async function resolveSources(fileIds: string[]): Promise<UploadedFileRecord[]> 
 }
 
 function assertConvertible(sources: UploadedFileRecord[], outputFormat: string): void {
-  const unsupported = sources.filter((file) => !IMAGE_INPUT_FORMATS.has(file.extension))
+  const unsupported = sources.filter((file) => !SUPPORTED_EXTENSIONS.has(file.extension))
 
   if (unsupported.length > 0) {
     const detail = unsupported.map((file) => `${file.originalName} (.${file.extension})`).join(', ')
     throw new ConversionError(
-      `Formato(s) de entrada sem conversor disponivel nesta etapa: ${detail}. ` +
-        `Aceitos: ${[...IMAGE_INPUT_FORMATS].join(', ')}.`,
+      `Formato(s) de entrada sem conversor disponivel: ${detail}. ` +
+        `Aceitos: ${[...SUPPORTED_EXTENSIONS].join(', ')}.`,
     )
   }
 
+  const categories = new Set<FileCategory>()
+
+  for (const file of sources) {
+    const category = getFileCategory(file.extension)
+    if (category) categories.add(category)
+  }
+
+  if (categories.size > 1) {
+    const detail = sources.map((file) => `${file.originalName} (.${file.extension})`).join(', ')
+    throw new ConversionError(
+      'Lote misto: todos os arquivos precisam ser do mesmo tipo para usar um unico ' +
+        `formato de saida. Recebidos: ${detail}.`,
+    )
+  }
+
+  const category = [...categories][0]
+
+  if (!category) {
+    throw new ConversionError('Nenhum formato de entrada reconhecido no lote.')
+  }
+
+  const allowedOutputs =
+    category === 'image' ? IMAGE_OUTPUT_FORMATS : OFFICE_OUTPUT_FORMATS[category]
   const normalizedOutput = normalizeFormat(outputFormat)
+
+  if (!allowedOutputs.has(normalizedOutput)) {
+    throw new ConversionError(
+      `Formato de saida .${outputFormat} nao disponivel para ${CATEGORY_LABELS[category]}. ` +
+        `Disponiveis: ${[...allowedOutputs].join(', ')}.`,
+    )
+  }
+
+  if (category !== 'image') {
+    const engine = getDocumentEngineStatus()
+
+    if (!engine.available) {
+      throw new ConversionError(
+        engine.reason ?? 'Conversor de documentos indisponivel no servidor.',
+        503,
+      )
+    }
+  }
+
   const redundant = sources.filter((file) => normalizeFormat(file.extension) === normalizedOutput)
 
   if (redundant.length > 0) {
@@ -411,9 +577,9 @@ function normalizeOutputFormat(outputFormat: unknown): string {
 
   const normalized = outputFormat.trim().toLowerCase().replace(/^\./, '')
 
-  if (!IMAGE_OUTPUT_FORMATS.has(normalized)) {
+  if (!OUTPUT_FORMATS.has(normalized)) {
     throw new ConversionError(
-      `Formato de saida nao suportado: ${outputFormat}.Disponiveis: ${[...IMAGE_OUTPUT_FORMATS].join(', ')}.`,
+      `Formato de saida nao suportado: ${outputFormat}.Disponiveis: ${[...OUTPUT_FORMATS].join(', ')}.`,
     )
   }
 

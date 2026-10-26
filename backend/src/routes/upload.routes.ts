@@ -12,7 +12,7 @@ export const uploadRoutes: FastifyPluginAsync = async (app) => {
       const payload: ApiResponse<null> = {
         success: false,
         data: null,
-        message: 'Envie os arquivos no formato multipart/form-data no campo "files".',
+        message: 'Envie o arquivo no formato multipart/form-data no campo "files".',
       }
       return reply.code(415).send(payload)
     }
@@ -28,8 +28,8 @@ export const uploadRoutes: FastifyPluginAsync = async (app) => {
       success: true,
       data: result,
       message: result.rejected.length
-        ? `${result.files.length} arquivo(s) enviado(s), ${result.rejected.length} rejeitado(s).`
-        : `${result.files.length} arquivo(s) enviado(s).`,
+        ? 'Arquivo enviado, mas parte do envio foi rejeitada.'
+        : 'Arquivo enviado com sucesso.',
     }
 
     return reply.code(201).send(payload)

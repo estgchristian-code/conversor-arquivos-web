@@ -81,6 +81,18 @@ export interface ConversionOptions {
   [key: string]: unknown
 }
 
+export interface HealthCapabilities {
+  images: boolean
+  documents: boolean
+  documentEngine: 'libreoffice' | null
+}
+
+export interface HealthStatus {
+  status: string
+  timestamp: string
+  capabilities: HealthCapabilities
+}
+
 export interface StartConversionRequest {
   fileIds: string[]
   outputFormat: string

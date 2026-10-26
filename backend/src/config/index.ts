@@ -7,7 +7,9 @@ export const config = {
 
   upload: {
     maxFileSize: parseInt(process.env.MAX_FILE_SIZE || '524288000', 10), // 500MB
-    maxFiles: parseInt(process.env.MAX_FILES || '50', 10),
+    // O fluxo de upload aceita somente 1 arquivo por vez. O limite nao e
+    // configuravel por variavel de ambiente.
+    maxFiles: 1,
     tempDir: process.env.UPLOAD_TEMP_DIR || '/tmp/uploads',
   },
 
@@ -16,6 +18,13 @@ export const config = {
       uploadDir: process.env.STORAGE_LOCAL_DIR || './storage/uploads',
       outputDir: process.env.STORAGE_OUTPUT_DIR || './storage/outputs',
     },
+  },
+
+  documents: {
+    // Caminho explicito do soffice; quando vazio a deteccao procura nos
+    // diretorios padrao e no PATH do processo.
+    libreOfficePath: process.env.LIBREOFFICE_PATH || process.env.SOFFICE_PATH || '',
+    timeoutMs: parseInt(process.env.DOCUMENT_CONVERSION_TIMEOUT_MS || '120000', 10),
   },
 
   frontend: {

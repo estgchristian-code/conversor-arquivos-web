@@ -71,7 +71,6 @@ function SidebarContent({ currentPage, onNavigate, apiStatus, onClose, closeButt
             <p className="truncate text-[14px] font-semibold leading-5 tracking-[-0.01em] text-gray-900">
               Conversor de Arquivos
             </p>
-            <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-gray-400">CRCPR</p>
           </div>
         </div>
         {onClose && (
