@@ -10,9 +10,7 @@ import {
   ALLOWED_UPLOAD_FIELDS,
   formatSizeLimit,
   isAllowedExtension,
-  isOfficeExtension,
 } from '../constants/supported-formats.js'
-import { getDocumentEngineStatus } from './document-engine.service.js'
 import { uploadRepository } from '../repositories/upload.repository.js'
 import type {
   RejectedFile,
@@ -69,15 +67,6 @@ export async function processUpload(parts: AsyncIterable<Multipart>): Promise<Up
       if (!isAllowedExtension(extension)) {
         drain(part)
         rejected.push({ name: originalName, reason: `formato ".${extension}" nao suportado` })
-        continue
-      }
-
-      if (isOfficeExtension(extension) && !getDocumentEngineStatus().available) {
-        drain(part)
-        rejected.push({
-          name: originalName,
-          reason: 'conversor de documentos indisponivel no servidor (LibreOffice nao encontrado)',
-        })
         continue
       }
 

@@ -98,7 +98,7 @@ export interface ApiResponse<T> {
 export interface HealthCapabilities {
   images: boolean
   documents: boolean
-  documentEngine: 'libreoffice' | null
+  documentEngine: 'gotenberg' | null
 }
 
 export interface HealthStatus {

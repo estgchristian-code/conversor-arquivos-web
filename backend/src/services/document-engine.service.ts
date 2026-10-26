@@ -151,6 +151,11 @@ function runSoffice(
   options: ConvertOfficeFileOptions,
   timeoutMs: number,
 ): Promise<string> {
+  engineLogger.info(
+    { binary, outputFormat: options.outputFormat, filter: 'pdf:writer_pdf_Export' },
+    'Executando LibreOffice',
+  )
+
   return new Promise((resolve, reject) => {
     const args = [
       `-env:UserInstallation=${pathToFileURL(profileDir).href}`,
@@ -161,15 +166,20 @@ function runSoffice(
       '--nolockcheck',
       '--nofirststartwizard',
       '--convert-to',
-      options.outputFormat,
+      options.outputFormat === 'pdf' ? 'pdf:writer_pdf_Export' : options.outputFormat,
       '--outdir',
       options.outputDir,
       options.inputPath,
     ]
 
+    const env = { ...process.env }
+    delete env.PYTHONHOME
+    delete env.PYTHONPATH
+
     const child = spawn(binary, args, {
       windowsHide: true,
       stdio: ['ignore', 'pipe', 'pipe'],
+      env,
     })
 
     let stderr = ''
@@ -197,10 +207,23 @@ function runSoffice(
       }
     })
 
-    child.on('error', (error) => finish(error))
+    child.on('error', (error) => {
+      const stderrTrimmed = stderr.trim()
+      finish(
+        new Error(
+          `Erro ao iniciar LibreOffice (${binary}): ${error.message}${stderrTrimmed ? ` | stderr: ${stderrTrimmed}` : ''}`,
+        ),
+      )
+    })
     child.on('close', (code) => {
+      const stderrTrimmed = stderr.trim()
       if (code === 0) finish()
-      else finish(new Error(`LibreOffice saiu com codigo ${code}${stderr ? `: ${stderr.trim()}` : ''}`))
+      else
+        finish(
+          new Error(
+            `LibreOffice saiu com codigo ${code} (${binary}, --convert-to pdf:writer_pdf_Export)${stderrTrimmed ? `: ${stderrTrimmed}` : ''}`,
+          ),
+        )
     })
   })
 }

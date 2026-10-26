@@ -25,6 +25,7 @@ export const DOCUMENT_EXTENSIONS: ReadonlySet<string> = new Set([
   'odt',
   'rtf',
   'txt',
+  'pdf',
 ])
 
 /** Planilhas processadas pelo motor de escritorio. */

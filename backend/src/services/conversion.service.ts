@@ -22,9 +22,9 @@ import {
   type OfficeCategory,
 } from '../constants/supported-formats.js'
 import {
-  convertOfficeFile,
-  getDocumentEngineStatus,
-} from './document-engine.service.js'
+  convertOfficeFileViaGotenberg,
+  getGotenbergStatus,
+} from './gotenberg.service.js'
 import type {
   ConversionJobRecord,
   ConversionOptions,
@@ -116,7 +116,7 @@ export async function startConversion(request: StartConversionRequest): Promise<
   const options = normalizeOptions(request?.options)
 
   const sources = await resolveSources(fileIds)
-  assertConvertible(sources, outputFormat)
+  await assertConvertible(sources, outputFormat)
 
   const id = randomUUID()
   const now = new Date().toISOString()
@@ -322,7 +322,7 @@ async function convertOfficeDocument(
   jobId: string,
   outputFormat: string,
 ): Promise<ConversionResultRecord> {
-  const engine = getDocumentEngineStatus()
+  const engine = await getGotenbergStatus()
 
   if (!engine.available) {
     throw new ConversionError(
@@ -334,26 +334,17 @@ async function convertOfficeDocument(
   const destination = buildOutputPath(jobId, source.id, outputFormat)
   await mkdir(path.dirname(destination), { recursive: true })
 
-  // Diretorio temporario no mesmo volume do storage para permitir rename.
-  const workDir = path.join(
-    getStoragePaths().outputDir,
-    '.tmp',
-    `${jobId}-${source.id}-${randomUUID()}`,
-  )
-  await mkdir(workDir, { recursive: true })
-
   const baseName = path.parse(source.originalName).name || 'arquivo'
   const outputName = `${baseName}.${outputFormat}`
   const startedAt = Date.now()
 
   try {
-    const produced = await convertOfficeFile({
-      inputPath: source.path,
-      outputDir: workDir,
+    const produced = await convertOfficeFileViaGotenberg(
+      source.path,
+      destination,
       outputFormat,
-    })
+    )
 
-    await moveFile(produced.path, destination)
     const info = await stat(destination)
 
     return {
@@ -364,8 +355,12 @@ async function convertOfficeDocument(
       outputSize: info.size,
       duration: Date.now() - startedAt,
     }
-  } finally {
-    await rm(workDir, { recursive: true, force: true }).catch(() => undefined)
+  } catch (error) {
+    if (error instanceof ConversionError) throw error
+    throw new ConversionError(
+      error instanceof Error ? error.message : 'Falha ao converter o documento.',
+      502,
+    )
   }
 }
 
@@ -380,6 +375,16 @@ async function moveFile(from: string, to: string): Promise<void> {
 }
 
 async function loadImage(source: UploadedFileRecord): Promise<ReturnType<typeof sharp>> {
+  if (source.extension === 'pdf') {
+    // PDFs sao convertidos via Gotenberg. O sharp nao lê PDF
+    // diretamente (self-contained build sem poppler). O caminho de
+    // conversao para PDF entra em convertOfficeDocument().
+    throw new ConversionError(
+      `PDF deve ser convertido pelo Gotenberg: ${source.originalName}`,
+      503,
+    )
+  }
+
   if (source.extension === 'svg') {
     let content: string
 
@@ -490,7 +495,7 @@ async function resolveSources(fileIds: string[]): Promise<UploadedFileRecord[]> 
   return sources
 }
 
-function assertConvertible(sources: UploadedFileRecord[], outputFormat: string): void {
+async function assertConvertible(sources: UploadedFileRecord[], outputFormat: string): Promise<void> {
   const unsupported = sources.filter((file) => !SUPPORTED_EXTENSIONS.has(file.extension))
 
   if (unsupported.length > 0) {
@@ -534,7 +539,7 @@ function assertConvertible(sources: UploadedFileRecord[], outputFormat: string):
   }
 
   if (category !== 'image') {
-    const engine = getDocumentEngineStatus()
+    const engine = await getGotenbergStatus()
 
     if (!engine.available) {
       throw new ConversionError(

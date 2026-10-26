@@ -6,7 +6,7 @@ export const healthRoutes: FastifyPluginAsync = async (app) => {
   app.get('/health', async (_request, reply) => {
     const payload: ApiResponse<HealthStatus> = {
       success: true,
-      data: checkHealth(),
+      data: await checkHealth(),
     }
 
     return reply.code(200).send(payload)

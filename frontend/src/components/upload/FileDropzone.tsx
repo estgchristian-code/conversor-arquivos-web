@@ -48,14 +48,19 @@ export function FileDropzone({
   const [rejectedFiles, setRejectedFiles] = useState<{ file: File; reason: string }[]>([])
 
   const acceptedExtensions = useMemo(
-    () =>
-      new Set(
+    () => {
+      const base = new Set(
         (accept ? Object.values(accept).flat() : []).map((extension) =>
           // `getFileExtension` devolve a extensao sem o ponto (`png`), entao a
           // allowlist e normalizada da mesma forma antes da comparacao.
           extension.replace(/^\./, '').toLowerCase(),
         ),
-      ),
+      )
+      // Garante que PNG e PDF sejam sempre aceitos independentemente da disponibilidade do LibreOffice
+      base.add('png')
+      base.add('pdf')
+      return base
+    },
     [accept],
   )
 

@@ -1,9 +1,9 @@
 import { config } from '../config/index.js'
-import { getDocumentEngineStatus } from './document-engine.service.js'
+import { getGotenbergStatus } from './gotenberg.service.js'
 import type { HealthStatus } from '../types/index.js'
 
-export function checkHealth(): HealthStatus {
-  const documents = getDocumentEngineStatus()
+export async function checkHealth(): Promise<HealthStatus> {
+  const documents = await getGotenbergStatus()
 
   return {
     status: 'ok',
@@ -13,7 +13,7 @@ export function checkHealth(): HealthStatus {
     capabilities: {
       images: true,
       documents: documents.available,
-      documentEngine: documents.available ? 'libreoffice' : null,
+      documentEngine: documents.available ? 'gotenberg' : null,
     },
   }
 }

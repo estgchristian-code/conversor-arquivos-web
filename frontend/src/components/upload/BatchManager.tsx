@@ -19,7 +19,7 @@ const IMAGE_EXTENSIONS = new Set([
   'jpg', 'jpeg', 'jpe', 'jfif', 'png', 'webp', 'avif', 'gif', 'svg', 'tiff', 'tif', 'bmp',
 ])
 
-const DOCUMENT_EXTENSIONS = new Set(['doc', 'docx', 'odt', 'rtf', 'txt'])
+const DOCUMENT_EXTENSIONS = new Set(['doc', 'docx', 'odt', 'rtf', 'txt', 'pdf'])
 const SPREADSHEET_EXTENSIONS = new Set(['xls', 'xlsx', 'ods', 'csv'])
 const PRESENTATION_EXTENSIONS = new Set(['ppt', 'pptx', 'odp'])
 const OFFICE_EXTENSIONS = new Set([
@@ -53,6 +53,7 @@ const IMAGE_ACCEPT: Record<string, string[]> = {
 }
 
 const OFFICE_ACCEPT: Record<string, string[]> = {
+  'application/pdf': ['.pdf'],
   'application/msword': ['.doc'],
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document': ['.docx'],
   'application/vnd.oasis.opendocument.text': ['.odt'],
@@ -90,6 +91,9 @@ function getCategory(extension: string): FileCategory | null {
 
 function isSupportedInput(extension: string, documentsAvailable: boolean): boolean {
   const normalized = extension.toLowerCase()
+  // PNG e imagens sempre aceitos. PDF é reconhecido como entrada mesmo sem LibreOffice
+  // (a conversão pode ficar indisponível, mas a validação não deve bloquear o upload)
+  if (normalized === 'pdf') return true
   return IMAGE_EXTENSIONS.has(normalized) || (documentsAvailable && OFFICE_EXTENSIONS.has(normalized))
 }
 
@@ -98,7 +102,9 @@ function describeSupportedInputs(documentsAvailable: boolean): string {
 }
 
 function getAcceptedInputFiles(documentsAvailable: boolean): Record<string, string[]> {
-  return documentsAvailable ? { ...IMAGE_ACCEPT, ...OFFICE_ACCEPT } : IMAGE_ACCEPT
+  // PDF e imagens sempre aceitos para upload (o backend nao depende do LibreOffice para aceitar PDF)
+  const base = { ...IMAGE_ACCEPT, 'application/pdf': ['.pdf'] }
+  return documentsAvailable ? { ...base, ...OFFICE_ACCEPT } : base
 }
 
 /** Formatos distintos detectados pela extensao do arquivo selecionado. */

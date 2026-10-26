@@ -23,8 +23,18 @@ export const config = {
   documents: {
     // Caminho explicito do soffice; quando vazio a deteccao procura nos
     // diretorios padrao e no PATH do processo.
+    // Mantido para compatibilidade; nao e mais usado pelo mecanismo de
+    // conversao, que agora depende do Gotenberg via HTTP.
     libreOfficePath: process.env.LIBREOFFICE_PATH || process.env.SOFFICE_PATH || '',
     timeoutMs: parseInt(process.env.DOCUMENT_CONVERSION_TIMEOUT_MS || '120000', 10),
+  },
+
+  gotenberg: {
+    // URL do servico Gotenberg (ex.: http://localhost:3000).
+    // Quando vazio, conversoes de documentos/planilhas/apresentacoes
+    // sao rejeitadas com erro 503.
+    url: process.env.GOTENBERG_URL || '',
+    timeoutMs: parseInt(process.env.GOTENBERG_TIMEOUT_MS || '120000', 10),
   },
 
   frontend: {
